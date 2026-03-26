@@ -11,6 +11,6 @@ extern VL53L4CD sensors[SENSOR_COUNT];
 
 bool setup_mcp();
 bool setup_sensors();
-void read_sensors(uint16_t *dist, bool *dist_ut);
+void read_sensors(uint16_t *dist, bool *dist_ut, float *error);
 
 #endif

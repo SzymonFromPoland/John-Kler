@@ -30,7 +30,7 @@ bool setup_sensors()
         delay(10);
     }
 
-    delay (100);
+    delay(100);
 
     bool status[SENSOR_COUNT];
 
@@ -42,7 +42,7 @@ bool setup_sensors()
         delay(10);
 
         sensors[i].setTimeout(300);
-        if (!sensors[i].init(false))
+        if (!sensors[i].init(false, true))
         {
             Serial.print("Failed to init sensor ");
             Serial.println(i);
@@ -53,7 +53,7 @@ bool setup_sensors()
         else
         {
             sensors[i].setAddress(0x2A + i);
-            sensors[i].setRangeTiming(10, 0);
+            sensors[i].setRangeTiming(20, 0);
             sensors[i].startContinuous();
             Serial.print("Sensor ");
             Serial.print(i);
@@ -66,12 +66,16 @@ bool setup_sensors()
     return status;
 }
 
-void read_sensors(uint16_t *dist, bool *dist_ut)
+void read_sensors(uint16_t *dist, bool *dist_ut, float *error)
 {
+    float eps = 1e-3f;
+
+    float numerator = 0.0f;
+    float denominator = 0.0f;
     uint8_t status[SENSOR_COUNT];
     for (uint8_t i = 0; i < SENSOR_COUNT; i++)
     {
-        sensors[i].read();
+        sensors[i].read(false);
         dist[i] = sensors[i].ranging_data.range_mm;
         status[i] = sensors[i].ranging_data.range_status;
         dist[i] = (dist[i] < threshold && status[i] == 0) ? dist[i] : threshold;
@@ -79,5 +83,12 @@ void read_sensors(uint16_t *dist, bool *dist_ut)
             dist[i] = -1;
 
         dist_ut[i] = dist[i] < threshold && dist[i] != -1;
+
+        if (!dist_ut[i]) continue;
+        float s = 1.0f / (dist[i] + eps);
+        int position = i - 4;
+        numerator += s * position;
+        denominator += s;
     }
+    *error = (denominator > 0.0001f) ? (numerator / denominator) : 0.0f;
 }
