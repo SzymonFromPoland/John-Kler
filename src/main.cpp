@@ -59,10 +59,10 @@ float prev_error = 0;
 float pd(float error, float dt, float Kp, float Kd)
 {
   if (dt < 0.001f) dt = 0.001f;
-  float P = Kp * error;
-  float D = Kd * (error - prev_error) / dt;
+  float proportional = Kp * error;
+  float deritative = Kd * (error - prev_error) / dt;
   prev_error = error;
-  return P + D;
+  return proportional + deritative;
 }
 
 float dt;
