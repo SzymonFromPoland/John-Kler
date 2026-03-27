@@ -53,7 +53,7 @@ bool setup_sensors()
         else
         {
             sensors[i].setAddress(0x2A + i);
-            sensors[i].setRangeTiming(20, 0);
+            sensors[i].setRangeTiming(25, 0);
             sensors[i].startContinuous();
             Serial.print("Sensor ");
             Serial.print(i);

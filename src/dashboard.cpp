@@ -8,6 +8,7 @@ static int *_mode;
 static volatile float *_kp;
 static volatile float *_kd;
 static volatile float *_speed;
+static volatile float *_mspeed;
 
 static const char HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 <html>
@@ -45,16 +46,20 @@ static const char HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 
 <div class="params">
   <label>Kp</label>
-  <input type="range" id="kp" min="0" max="300" step="1" oninput="document.getElementById('kp_v').innerText=this.value; sendParams()">
+  <input type="range" id="kp" min="0" max="1000" step="1" oninput="document.getElementById('kp_v').innerText=this.value; sendParams()">
   <span id="kp_v">-</span>
 
   <label>Kd</label>
-  <input type="range" id="kd" min="0" max="200" step="1" oninput="document.getElementById('kd_v').innerText=this.value; sendParams()">
+  <input type="range" id="kd" min="0" max="1000" step="1" oninput="document.getElementById('kd_v').innerText=this.value; sendParams()">
   <span id="kd_v">-</span>
 
   <label>Speed</label>
   <input type="range" id="sp" min="0" max="100" step="1" oninput="document.getElementById('sp_v').innerText=this.value; sendParams()">
   <span id="sp_v">-</span>
+
+  <label>Max speed</label>
+  <input type="range" id="msp" min="0" max="100" step="1" oninput="document.getElementById('msp_v').innerText=this.value; sendParams()">
+  <span id="msp_v">-</span>
 </div>
 <br>
 
@@ -73,7 +78,8 @@ function sendParams() {
   const kp = document.getElementById('kp').value;
   const kd = document.getElementById('kd').value;
   const sp = document.getElementById('sp').value;
-  fetch('/params?kp=' + kp + '&kd=' + kd + '&sp=' + sp);
+  const msp = document.getElementById('msp').value;
+  fetch('/params?kp=' + kp + '&kd=' + kd + '&sp=' + sp + '&msp=' + msp);
 }
 function update() {
   fetch('/data').then(r=>r.json()).then(d=>{
@@ -92,6 +98,8 @@ function update() {
       document.getElementById('kd_v').innerText = d.kd;
       document.getElementById('sp').value = d.sp;
       document.getElementById('sp_v').innerText = d.sp;
+      document.getElementById('msp').value = d.msp;
+      document.getElementById('msp_v').innerText = d.msp;
     }
   });
 }
@@ -103,48 +111,50 @@ update();
 
 static void dashTask(void *param)
 {
-    WiFi.softAP("Johnatan-Kler", "12345678");
+  WiFi.softAP("Johnatan-Kler", "12345678");
 
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
-        req->send(200, "text/html", HTML);
-    });
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *req)
+            { req->send(200, "text/html", HTML); });
 
-    server.on("/data", HTTP_GET, [](AsyncWebServerRequest *req) {
-        char buf[300];
+  server.on("/data", HTTP_GET, [](AsyncWebServerRequest *req)
+            {
+        char buf[512];
         snprintf(buf, sizeof(buf),
-            "{\"dist\":[%d,%d,%d,%d,%d,%d,%d,%d,%d],\"mode\":%d,\"kp\":%.1f,\"kd\":%.1f,\"sp\":%.1f}",
+            "{\"dist\":[%d,%d,%d,%d,%d,%d,%d,%d,%d],\"mode\":%d,\"kp\":%.1f,\"kd\":%.1f,\"sp\":%.1f,\"msp\":%.1f}",
             _dist[0], _dist[1], _dist[2], _dist[3], _dist[4],
             _dist[5], _dist[6], _dist[7], _dist[8], *_mode,
-            *_kp, *_kd, *_speed);
-        req->send(200, "application/json", buf);
-    });
+            *_kp, *_kd, *_speed, *_mspeed);
+        req->send(200, "application/json", buf); });
 
-    server.on("/mode", HTTP_GET, [](AsyncWebServerRequest *req) {
+  server.on("/mode", HTTP_GET, [](AsyncWebServerRequest *req)
+            {
         if (req->hasParam("v"))
             *_mode = req->getParam("v")->value().toInt();
-        req->send(200, "text/plain", "ok");
-    });
+        req->send(200, "text/plain", "ok"); });
 
-    server.on("/params", HTTP_GET, [](AsyncWebServerRequest *req) {
+  server.on("/params", HTTP_GET, [](AsyncWebServerRequest *req)
+            {
         if (req->hasParam("kp"))
             *_kp = req->getParam("kp")->value().toFloat();
         if (req->hasParam("kd"))
             *_kd = req->getParam("kd")->value().toFloat();
         if (req->hasParam("sp"))
             *_speed = req->getParam("sp")->value().toFloat();
-        req->send(200, "text/plain", "ok");
-    });
+        if (req->hasParam("msp"))
+            *_mspeed = req->getParam("msp")->value().toFloat();
+        req->send(200, "text/plain", "ok"); });
 
-    server.begin();
-    vTaskDelete(NULL);
+  server.begin();
+  vTaskDelete(NULL);
 }
 
-void startDashboard(uint16_t *dist, int *mode, float *kp, float *kd, float *speed)
+void startDashboard(uint16_t *dist, int *mode, float *kp, float *kd, float *speed, float *mspeed)
 {
-    _dist = dist;
-    _mode = mode;
-    _kp = kp;
-    _kd = kd;
-    _speed = speed;
-    xTaskCreatePinnedToCore(dashTask, "dashboard", 8192, NULL, 1, NULL, 0);
+  _dist = dist;
+  _mode = mode;
+  _kp = kp;
+  _kd = kd;
+  _speed = speed;
+  _mspeed = mspeed;
+  xTaskCreatePinnedToCore(dashTask, "dashboard", 8192, NULL, 1, NULL, 0);
 }

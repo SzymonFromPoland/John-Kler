@@ -24,18 +24,23 @@ Servo servo;
 int mode = 1;
 float error = 0.0f;
 
-float Kp = 50.0f;
-float Kd = 20.0f;
+float Kp = 800.0f;
+float Kd = 65.0f;
 float speed = 40.0f;
+float max_speed = 40.0f;
 int last_dir = -1;
 
 uint16_t dist[SENSOR_COUNT];
 bool dist_ut[SENSOR_COUNT];
 
+unsigned long slowUntil = 0;
+float slowSpeed = 20;
+const int SLOW_THRESHOLD = threshold;
+
 void setup()
 {
-  Serial.begin(115200);
-  delay(2500);
+  // Serial.begin(115200);
+  // delay(2500);
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   esp_task_wdt_deinit();
   Wire.begin(SDA, SCL);
@@ -52,27 +57,43 @@ void setup()
 
   drive(0, 0);
   servo.attach(SERVO, 500, 2500);
-  startDashboard(dist, &mode, &Kp, &Kd, &speed);
+  startDashboard(dist, &mode, &Kp, &Kd, &speed, &max_speed);
 }
 
-float prev_error = 0;
+float prev_error = 0.0f;
+float filtered_error = 0.0f;
+
 float pd(float error, float dt, float Kp, float Kd)
 {
-  if (dt < 0.001f) dt = 0.001f;
+  if (dt < 0.001f)
+    dt = 0.001f;
+
   float proportional = Kp * error;
-  float deritative = Kd * (error - prev_error) / dt;
-  prev_error = error;
-  return proportional + deritative;
+
+  const float alpha = 0.9f;
+  filtered_error = alpha * error + (1 - alpha) * filtered_error;
+
+  float derivative = Kd * ((filtered_error - prev_error) / dt);
+
+  const float max_derivative = speed;
+  if (derivative > max_derivative)
+    derivative = max_derivative;
+  if (derivative < -max_derivative)
+    derivative = -max_derivative;
+
+  prev_error = filtered_error;
+  return proportional + derivative;
 }
 
-float dt;
-unsigned long lastTime = 0;
+long lastTime = 0;
+long start_wait = 0;
+
 void loop()
 {
   unsigned long loopStart = millis();
-  if (lastTime == 0) lastTime = loopStart;
-  dt = (loopStart - lastTime) / 1000.0f;
-  lastTime = loopStart;
+  unsigned long now = millis();
+  float dt = (now - lastTime) / 1000.0;
+  lastTime = now;
 
   read_sensors(dist, dist_ut, &error);
 
@@ -82,36 +103,43 @@ void loop()
     last_dir = 1;
 
   bool none = true;
+  bool anyUnderThreshold = false;
   for (int i = 0; i < SENSOR_COUNT; i++)
+  {
     if (dist_ut[i])
-    {
       none = false;
-      break;
-    }
+    if (dist[i] < SLOW_THRESHOLD)
+      anyUnderThreshold = true;
+  }
 
-  float output = pd(error, dt, Kp, Kd);
+  float output = pd(error, dt, Kp / 100, Kd / 100);
 
   int left = 0, right = 0;
-
   if (started)
   {
     if (none)
     {
-      left = last_dir * speed;
-      right = -last_dir * speed;
+      float rotSpeed = speed;
+      left = last_dir * rotSpeed;
+      right = -last_dir * rotSpeed;
     }
     else
     {
       left = speed + output;
       right = speed - output;
     }
-    drive(left, right);
+
+    if (dist[4] > 100)
+      start_wait = millis();
+
+    if (millis() - start_wait > 850)
+      drive(100, 100);
+    else
+      drive(constrain(left, -max_speed, max_speed), constrain(right, -max_speed, max_speed));
   }
   else
   {
     drive(0, 0);
-    prev_error = 0;
-    lastTime = 0;
   }
 
   unsigned long loopTime = millis() - loopStart;
