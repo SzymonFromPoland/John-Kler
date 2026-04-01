@@ -25,7 +25,6 @@
 
 #define SERVO 1
 
-const int xshuts[SENSOR_COUNT] = {-1, 5, 6, 7, 4, 0, 1, 2, 3};
 const int threshold = 600;
 
 #endif

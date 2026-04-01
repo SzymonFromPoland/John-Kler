@@ -1,94 +1,67 @@
 #include <sensors.h>
 
-bool setup_mcp()
+const int xshuts[SENSOR_COUNT] = {-1, 5, 6, 7, 4, 0, 1, 2, 3};
+
+VL53L4CD sensors[SENSOR_COUNT] = {
+    VL53L4CD(&Wire, -1),
+    VL53L4CD(&Wire, -1),
+    VL53L4CD(&Wire, -1),
+    VL53L4CD(&Wire, -1),
+    VL53L4CD(&Wire, -1),
+    VL53L4CD(&Wire, -1),
+    VL53L4CD(&Wire, -1),
+    VL53L4CD(&Wire, -1),
+    VL53L4CD(&Wire, -1)};
+
+Adafruit_MCP23X08 mcp;
+
+void setup_sensors()
 {
-    for (int i = 0; i < 10; i++)
-    {
-        Wire.beginTransmission(0x20);
-        Wire.endTransmission();
-        delay(10);
-    }
 
-    if (!mcp.begin_I2C(0x20))
-        return 0;
+    Serial.println("Setting up mcp...");
+    mcp.begin_I2C(0x20, &Wire);
 
-    for (uint8_t i = 0; i < 8; i++)
+    for (int i = 0; i < 8; i++)
     {
         mcp.pinMode(i, OUTPUT);
         mcp.digitalWrite(i, LOW);
     }
 
-    return 1;
-}
+    Serial.println("Setting up sensors...");
 
-bool setup_sensors()
-{
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < SENSOR_COUNT; i++)
     {
-        Wire.beginTransmission(0x29);
-        Wire.endTransmission();
-        delay(10);
-    }
-
-    delay(100);
-
-    bool status[SENSOR_COUNT];
-
-    for (uint8_t i = 0; i < SENSOR_COUNT; i++)
-    {
-        delay(10);
-        if (xshuts[i] != -1)
+        delay(50);
+        if (xshuts[i] >= 0)
             mcp.digitalWrite(xshuts[i], HIGH);
-        delay(10);
-
-        sensors[i].setTimeout(300);
-        if (!sensors[i].init(false, true))
-        {
-            Serial.print("Failed to init sensor ");
-            Serial.println(i);
-            mcp.digitalWrite(xshuts[i], LOW);
-            delay(200);
-            status[i] = 0;
-        }
-        else
-        {
-            sensors[i].setAddress(0x2A + i);
-            sensors[i].setRangeTiming(25, 0);
-            sensors[i].startContinuous();
-            Serial.print("Sensor ");
-            Serial.print(i);
-            Serial.print(" initialized at 0x");
-            Serial.println(0x2A + i, HEX);
-            status[i] = 1;
-        }
+        delay(50);
+        sensors[i].InitSensor();
+        sensors[i].VL53L4CD_SetI2CAddress(0x2A + i * 2);
+        Serial.printf("Sensor %d initialized at address 0x%02X\n", i, 0x2A + i * 2);
+    }
+    for (int i = 0; i < SENSOR_COUNT; i++)
+    {
+        sensors[i].VL53L4CD_SetRangeTiming(10, 0);
+        sensors[i].VL53L4CD_StartRanging();
     }
 
-    return status;
+    Serial.println("Sensors setup complete.");
 }
 
-void read_sensors(uint16_t *dist, bool *dist_ut, float *error)
+void read_sensors(uint16_t *distances)
 {
-    float eps = 1e-3f;
+    VL53L4CD_Result_t results;
+    uint8_t NewDataReady = 0;
 
-    float numerator = 0.0f;
-    float denominator = 0.0f;
-    uint8_t status[SENSOR_COUNT];
-    for (uint8_t i = 0; i < SENSOR_COUNT; i++)
+    do
     {
-        sensors[i].read(false);
-        dist[i] = sensors[i].ranging_data.range_mm;
-        status[i] = sensors[i].ranging_data.range_status;
-        dist[i] = (dist[i] < threshold && status[i] == 0) ? dist[i] : threshold;
-        if (sensors[i].timeoutOccurred())
-            dist[i] = -1;
+        sensors[0].VL53L4CD_CheckForDataReady(&NewDataReady);
+    } while (NewDataReady == 0);
 
-        dist_ut[i] = dist[i] < threshold && dist[i] != -1;
-
-        if (!dist_ut[i]) continue;
-        float s = 1.0f / (dist[i] + eps);
-        int position = i - 4;
-        numerator += s * position;
-        denominator += s;
+    for (int i = 0; i < SENSOR_COUNT; i++)
+    {
+        sensors[i].VL53L4CD_ClearInterrupt();
+        sensors[i].VL53L4CD_GetResult(&results);
+        distances[i] = (results.range_status == 0) ? results.distance_mm : threshold;
     }
-    *error = (denominator > 0.0001f) ? (numerator / denominator) : 0.0f;
 }

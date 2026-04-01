@@ -1,16 +1,14 @@
 #include "start_module.h"
 
 static TaskHandle_t IRTaskHandle;
+static RC5 rc5_global(5);
+
 bool started = false;
 bool hold_led = false;
 
 void irTask(void *parameter)
 {
-  uint8_t pin = ((uint32_t *)parameter)[0];
-  uint8_t ledPin = ((uint32_t *)parameter)[1];
-
-  RC5 rc5(pin);
-
+  uint8_t ledPin = (uint8_t)(uintptr_t)parameter;
   uint8_t START, STOP;
 
   prefs_global.begin("robot", true);
@@ -24,7 +22,7 @@ void irTask(void *parameter)
     unsigned char address;
     unsigned char command;
 
-    if (rc5.read(&toggle, &address, &command))
+    if (rc5_global.read(&toggle, &address, &command))
     {
       if (address == 0x0B)
       {
@@ -53,7 +51,8 @@ void irTask(void *parameter)
           vTaskDelay(250 / portTICK_PERIOD_MS);
         }
 
-        hold_led = false;      }
+        hold_led = false;
+      }
       else if (address == 0x07)
       {
         if (command == START)
@@ -67,16 +66,13 @@ void irTask(void *parameter)
 
 void startIRTask(uint8_t pin, uint8_t ledPin)
 {
-  uint32_t *params = (uint32_t *)malloc(2 * sizeof(uint32_t));
-  params[0] = pin;
-  params[1] = ledPin;
-
+  rc5_global = RC5(pin);
   xTaskCreatePinnedToCore(
       irTask,
       "IR_Task",
       8192,
-      params,
-      1,
+      (void *)(uintptr_t)ledPin,
+      0,
       &IRTaskHandle,
       1);
 }
