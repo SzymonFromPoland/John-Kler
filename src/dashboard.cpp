@@ -5,10 +5,8 @@
 static AsyncWebServer server(80);
 static uint16_t *_dist;
 static int *_mode;
-static volatile float *_kp;
-static volatile float *_kd;
-static volatile float *_speed;
-static volatile float *_mspeed;
+static volatile float *_kp, *_kd, *_speed, *_mspeed, *_targetYaw;
+static volatile bool *_calibrateFlag;
 
 static const char HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 <html>
@@ -20,19 +18,12 @@ static const char HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
   .modes { display: flex; gap: 8px; margin-bottom: 16px; }
   .modes button { flex: 1; padding: 10px; font-size: 16px; cursor: pointer; border: 2px solid #ccc; background: #f0f0f0; border-radius: 6px; }
   .modes button.active { background: #333; color: #fff; border-color: #333; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-  td, th { border: 1px solid #ccc; padding: 6px 10px; text-align: center; }
-  th { background: #f0f0f0; }
-  .bar-cell { padding: 4px 6px; }
-  .bar-wrap { background: #eee; border-radius: 4px; height: 16px; }
-  .bar { background: #333; height: 16px; border-radius: 4px; transition: width 0.1s; }
-  .ut-yes { color: green; font-weight: bold; }
-  .ut-no  { color: #aaa; }
   .params { display: grid; grid-template-columns: 80px 1fr 50px; gap: 6px 10px; align-items: center; margin-bottom: 16px; }
   .params label { font-weight: bold; }
   .params input[type=range] { width: 100%; }
   .params span { text-align: right; font-family: monospace; }
-  .apply-btn { width: 100%; padding: 10px; font-size: 16px; cursor: pointer; border: none; background: #333; color: #fff; border-radius: 6px; }
+  .btn-cal { flex: 1; width: 100%; padding: 10px; font-size: 16px; cursor: pointer; border: 2px solid #ccc; background: #f0f0f0; border-radius: 6px; }
+  .btn-cal:active { background: #333; color: #fff; border-color: #333; }
 </style>
 </head>
 <body>
@@ -45,6 +36,7 @@ static const char HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 </div>
 
 <div class="params">
+
   <label>Kp</label>
   <input type="range" id="kp" min="0" max="1000" step="1" oninput="document.getElementById('kp_v').innerText=this.value; sendParams()">
   <span id="kp_v">-</span>
@@ -57,54 +49,42 @@ static const char HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
   <input type="range" id="sp" min="0" max="100" step="1" oninput="document.getElementById('sp_v').innerText=this.value; sendParams()">
   <span id="sp_v">-</span>
 
-  <label>Max speed</label>
-  <input type="range" id="msp" min="0" max="100" step="1" oninput="document.getElementById('msp_v').innerText=this.value; sendParams()">
-  <span id="msp_v">-</span>
+  <label>Target Yaw</label>
+  <input type="range" id="ty" min="-180" max="180" step="1" oninput="document.getElementById('ty_v').innerText=this.value; sendParams()">
+  <span id="ty_v">0</span>
 </div>
-<br>
 
-<table>
-  <tr><th>#</th><th>Distance (mm)</th><th>Bar</th><th>Under</th></tr>
-  <script>for(let i=0;i<9;i++) document.write(`<tr><td>${i}</td><td id="d${i}">-</td><td class="bar-cell"><div class="bar-wrap"><div class="bar" id="b${i}" style="width:0%"></div></div></td><td id="u${i}">-</td></tr>`);</script>
-</table>
+<button class="btn-cal" onclick="calibrate()">CALIBRATE MPU</button>
 
 <script>
-const THRESHOLD = 300;
 function setMode(m) {
   fetch('/mode?v=' + m);
-  [1,2,3].forEach(i => document.getElementById('m'+i).classList.toggle('active', i===m));
+}
+function calibrate() {
+  fetch('/calibrate');
 }
 function sendParams() {
+  const ty = document.getElementById('ty').value;
   const kp = document.getElementById('kp').value;
   const kd = document.getElementById('kd').value;
   const sp = document.getElementById('sp').value;
-  const msp = document.getElementById('msp').value;
-  fetch('/params?kp=' + kp + '&kd=' + kd + '&sp=' + sp + '&msp=' + msp);
+  fetch(`/params?ty=${ty}&kp=${kp}&kd=${kd}&sp=${sp}`);
 }
 function update() {
   fetch('/data').then(r=>r.json()).then(d=>{
-    d.dist.forEach((v,i)=>{
-      document.getElementById('d'+i).innerText = v;
-      document.getElementById('b'+i).style.width = Math.max(0, 100 - Math.round(v/THRESHOLD*100)) + '%';
-      const u = document.getElementById('u'+i);
-      u.innerText = v < THRESHOLD ? '●' : '○';
-      u.className = v < THRESHOLD ? 'ut-yes' : 'ut-no';
-    });
-    [1,2,3].forEach(i => document.getElementById('m'+i).classList.toggle('active', i===d.mode));
     if (document.getElementById('kp_v').innerText === '-') {
-      document.getElementById('kp').value = d.kp;
-      document.getElementById('kp_v').innerText = d.kp;
-      document.getElementById('kd').value = d.kd;
-      document.getElementById('kd_v').innerText = d.kd;
-      document.getElementById('sp').value = d.sp;
-      document.getElementById('sp_v').innerText = d.sp;
-      document.getElementById('msp').value = d.msp;
-      document.getElementById('msp_v').innerText = d.msp;
+        document.getElementById('ty').value = d.ty;
+        document.getElementById('ty_v').innerText = d.ty;
+        document.getElementById('kp').value = d.kp;
+        document.getElementById('kp_v').innerText = d.kp;
+        document.getElementById('kd').value = d.kd;
+        document.getElementById('kd_v').innerText = d.kd;
+        document.getElementById('sp').value = d.sp;
+        document.getElementById('sp_v').innerText = d.sp;
     }
   });
 }
-setInterval(update, 100);
-update();
+setInterval(update, 500);
 </script>
 </body>
 </html>)HTML";
@@ -113,42 +93,35 @@ static void dashTask(void *param)
 {
   WiFi.softAP("Johnatan-Kler", "12345678");
 
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *req)
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *req)   
             { req->send(200, "text/html", HTML); });
 
   server.on("/data", HTTP_GET, [](AsyncWebServerRequest *req)
             {
-        char buf[512];
-        snprintf(buf, sizeof(buf),
-            "{\"dist\":[%d,%d,%d,%d,%d,%d,%d,%d,%d],\"mode\":%d,\"kp\":%.1f,\"kd\":%.1f,\"sp\":%.1f,\"msp\":%.1f}",
-            _dist[0], _dist[1], _dist[2], _dist[3], _dist[4],
-            _dist[5], _dist[6], _dist[7], _dist[8], *_mode,
-            *_kp, *_kd, *_speed, *_mspeed);
-        req->send(200, "application/json", buf); });
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+      "{\"mode\":%d,\"kp\":%.1f,\"kd\":%.1f,\"sp\":%.1f,\"ty\":%.1f}",
+      *_mode, *_kp, *_kd, *_speed, *_targetYaw);
+    req->send(200, "application/json", buf); });
 
-  server.on("/mode", HTTP_GET, [](AsyncWebServerRequest *req)
+  server.on("/calibrate", HTTP_GET, [](AsyncWebServerRequest *req)
             {
-        if (req->hasParam("v"))
-            *_mode = req->getParam("v")->value().toInt();
-        req->send(200, "text/plain", "ok"); });
+    *_calibrateFlag = true;
+    req->send(200, "text/plain", "calibrating"); });
 
   server.on("/params", HTTP_GET, [](AsyncWebServerRequest *req)
             {
-        if (req->hasParam("kp"))
-            *_kp = req->getParam("kp")->value().toFloat();
-        if (req->hasParam("kd"))
-            *_kd = req->getParam("kd")->value().toFloat();
-        if (req->hasParam("sp"))
-            *_speed = req->getParam("sp")->value().toFloat();
-        if (req->hasParam("msp"))
-            *_mspeed = req->getParam("msp")->value().toFloat();
-        req->send(200, "text/plain", "ok"); });
+    if (req->hasParam("ty")) *_targetYaw = req->getParam("ty")->value().toFloat();
+    if (req->hasParam("kp")) *_kp = req->getParam("kp")->value().toFloat();
+    if (req->hasParam("kd")) *_kd = req->getParam("kd")->value().toFloat();
+    if (req->hasParam("sp")) *_speed = req->getParam("sp")->value().toFloat();
+    req->send(200, "text/plain", "ok"); });
 
   server.begin();
   vTaskDelete(NULL);
 }
 
-void startDashboard(uint16_t *dist, int *mode, float *kp, float *kd, float *speed, float *mspeed)
+void startDashboard(uint16_t *dist, int *mode, float *kp, float *kd, float *speed, float *mspeed, float *targetYaw, bool *calibrateFlag)
 {
   _dist = dist;
   _mode = mode;
@@ -156,5 +129,7 @@ void startDashboard(uint16_t *dist, int *mode, float *kp, float *kd, float *spee
   _kd = kd;
   _speed = speed;
   _mspeed = mspeed;
-  xTaskCreatePinnedToCore(dashTask, "dashboard", 8192, NULL, 1, NULL, 0);
+  _targetYaw = targetYaw;
+  _calibrateFlag = calibrateFlag;
+  xTaskCreatePinnedToCore(dashTask, "dashboard", 8192, NULL, 1, NULL, 1);
 }
