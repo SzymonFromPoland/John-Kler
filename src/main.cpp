@@ -2,9 +2,8 @@
 #include <Wire.h>
 #include <vl53l4cd_class.h>
 #include <Adafruit_MCP23X08.h>
-#include <Preferences.h>
+#include <Adafruit_MPU6050.h>
 #include <U8g2lib.h>
-#include <MPU6050.h>
 #include <ESP32Servo.h>
 #include <esp_task_wdt.h>
 #include <soc/soc.h>
@@ -13,21 +12,17 @@
 #include <config.h>
 #include <motors.h>
 #include <sensors.h>
-#include <start_module.h>
-#include <dashboard.h>
+#include <controller.h>
+// #include <dashboard.h>
 
 Preferences prefs_global;
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
-MPU6050 mpu;
+Adafruit_MPU6050 mpu;
 Servo servo;
 
 bool callibrate_mpu = true;
 
-int mode = 1;
 float error = 0.0f;
-
-float Kp = 800.0f;
-float Kd = 65.0f;
 
 float speed = 40.0f;
 float max_speed = 40.0f;
@@ -39,8 +34,6 @@ unsigned long slowUntil = 0;
 float slowSpeed = 20;
 const int SLOW_THRESHOLD = threshold;
 
-bool doCalibrate = false;
-
 float yaw = 0.0f;
 float targetYaw = 0.0f;
 float lastTargetYaw = 0.0f;
@@ -49,7 +42,7 @@ float gxBias = 0;
 
 void calibrateGyro()
 {
-    if (mpu.testConnection() && callibrate_mpu)
+    if (callibrate_mpu)
     {
         u8g2.clearBuffer();
         u8g2.setFont(u8g2_font_spleen8x16_me);
@@ -66,20 +59,16 @@ void calibrateGyro()
         u8g2.sendBuffer();
         delay(1000);
 
-        mpu.CalibrateAccel(6);
-        mpu.CalibrateGyro(6);
-
         int samples = 200;
-        long sum = 0;
-        int16_t ax, ay, az, gx, gy, gz;
+        float sum = 0;
+        sensors_event_t a, g, temp;
 
         for (int i = 0; i < samples; i++)
         {
-            mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-            sum += gx;
-            delay(5);
+            mpu.getEvent(&a, &g, &temp);
+            sum += g.gyro.x;
         }
-        gxBias = (float)sum / samples / 131.0f;
+        gxBias = sum / (float)samples;
 
         u8g2.clearBuffer();
         const char *done1 = "CALIBRATION";
@@ -112,22 +101,43 @@ void setup()
 
     drive(0, 0);
     // servo.attach(SERVO, 500, 2500);
-    startDashboard(dist, &mode, &Kp, &Kd, &speed, &max_speed, &targetYaw, &doCalibrate);
+    // startDashboard(dist, &mode, &Kp, &Kd, &speed, &max_speed, &targetYaw, &doCalibrate);
 
-    mpu.initialize();
+    if (mpu.begin(0x68))
+    {
+        mpu.setAccelerometerRange(MPU6050_RANGE_16_G);
+        mpu.setGyroRange(MPU6050_RANGE_2000_DEG);
+        mpu.setFilterBandwidth(MPU6050_BAND_260_HZ);
+        mpu.setSampleRateDivisor(0);
+        mpu.setHighPassFilter(MPU6050_HIGHPASS_0_63_HZ);
+    }
+    else
+    {
+        u8g2.clearBuffer();
+        const char *done1 = "MPU6050";
+        const char *done2 = "NOT FOUND";
+
+        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done1)) / 2, 16);
+        u8g2.println(done1);
+
+        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done2)) / 2, 32);
+        u8g2.println(done2);
+
+        u8g2.sendBuffer();
+        delay(750);
+    }
 }
 
 float prev_error = 0.0f;
-float pd(float error, float dt, float Kp, float Kd)
+float prev_derivative = 0.0f;
+float pd(float error, float dt, float Kp, float Kd, float alpha = 1.0f)
 {
-    static float prev_error = 0.0f;
-    static float prev_derivative = 0.0f;
 
-    if (dt < 0.001f)
-        dt = 0.001f;
+    if (dt < 0.002f)
+        dt = 0.002f;
     float P = Kp * error;
-    float derivative = (error - prev_error) / dt;
-    derivative = prev_derivative * derivative;
+    float raw_derivative = (error - prev_error) / dt;
+    float derivative = alpha * raw_derivative + (1.0f - alpha) * prev_derivative;
 
     prev_derivative = derivative;
     prev_error = error;
@@ -164,6 +174,11 @@ unsigned long targetTime = 0;
 const unsigned long DISPLAY_UPDATE_INTERVAL = 100;
 const unsigned long TARGET_ARROW_SHOW_TIME = 1000;
 
+float yawOutput = 0.0f;
+float yaw_gyro = 0.0f;
+float yaw_comp = 0.0f;
+const float comp_alpha = 0.98f;
+
 void loop()
 {
     unsigned long readStart = millis();
@@ -180,37 +195,21 @@ void loop()
         doCalibrate = false;
     }
 
-    int16_t ax, ay, az, gx, gy, gz;
-    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
 
-    float rate = ((float)gx / 131.0f) - gxBias;
+    float rate = (g.gyro.x - gxBias) * RAD_TO_DEG;
     yaw += rate * dt;
 
-    float diff = targetYaw - yaw;
-    while (diff > 180)
-        diff -= 360;
-    while (diff < -180)
-        diff += 360;
-
-    float yawOutput = pd(diff, dt, 1.5f, 0.67f);
-
-    float currentMax = speed;
-    if (abs(diff) < 30.0f)
-    {
-        currentMax = map(abs(diff), 0, 30, 15, speed);
-    }
-
-    if (abs(diff) < 3.0f)
-    {
-       drive(0, 0);
-       yawOutput=0;
-    }
+    yawOutput = pd(targetYaw - yaw, dt, yawKp, yawKd, 0.75f);
 
     if (started)
     {
-        float leftSpeed = constrain(yawOutput, -currentMax, currentMax);
-        float rightSpeed = constrain(-yawOutput, -currentMax, currentMax);
+        float leftSpeed = constrain(yawOutput, -speed, speed);
+        float rightSpeed = constrain(-yawOutput, -speed, speed);
+        // drive(leftSpeed, rightSpeed);
         drive(leftSpeed, rightSpeed);
+        // drive(-speed, speed);
     }
     else
     {
@@ -276,29 +275,10 @@ void loop()
         u8g2.setFont(u8g2_font_6x10_tf);
         u8g2.setDrawColor(1);
 
-        // targetYaw += 4;
-
-        // if (targetYaw > 180)
-        //     targetYaw = -180;
-
-        // if (millis() - targetTime < TARGET_ARROW_SHOW_TIME)
-        if (true)
+        switch (menu)
         {
-            u8g2.setCursor(0, 10);
-            u8g2.print("TY: ");
-            u8g2.print(targetYaw, 1);
-            u8g2.setCursor(0, 20);
-            u8g2.print("CY: ");
-            u8g2.print(diff, 1);
-            u8g2.setCursor(0, 30);
-            u8g2.print("YO: ");
-            u8g2.print(yawOutput, 1);
-            u8g2.drawCircle(80, 16, 15);
-            u8g2.drawLine(80, 16, 80 + (int)(14 * sin((targetYaw - yaw) * DEG_TO_RAD)), 16 - (int)(14 * cos((targetYaw - yaw) * DEG_TO_RAD)));
-        }
-        else
+        case 0:
         {
-
             u8g2.setCursor(0, 10);
             u8g2.print(started ? "ON " : "OFF");
             u8g2.print(" M");
@@ -323,6 +303,167 @@ void loop()
                 else
                     u8g2.drawFrame(x, 24, 7, 8);
             }
+            break;
+        }
+        case 1:
+        {
+            u8g2.setCursor(0, 10);
+            u8g2.print("TY: ");
+            u8g2.print(targetYaw, 1);
+            u8g2.setCursor(0, 20);
+            u8g2.print("CY: ");
+            u8g2.print(yaw, 1);
+            u8g2.setCursor(0, 30);
+            u8g2.print("YO: ");
+            u8g2.print(yawOutput, 1);
+            u8g2.drawCircle(80, 16, 15);
+            u8g2.drawLine(80, 16, 80 + (int)(14 * sin((targetYaw - yaw) * DEG_TO_RAD)), 16 - (int)(14 * cos((targetYaw - yaw) * DEG_TO_RAD)));
+            break;
+        }
+        case 2:
+        {
+            u8g2.setCursor(0, 10);
+            u8g2.print("Drive PD");
+
+            int y1 = 20;
+
+            if (selectedOpt == 0)
+            {
+                if (selected)
+                {
+
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, y1 - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, y1);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y1);
+                    u8g2.print("Kp:");
+                    u8g2.print(Kp);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, y1);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y1);
+                    u8g2.print("Kp:");
+                    u8g2.print(Kp);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, y1);
+                u8g2.print("Kp:");
+                u8g2.print(Kp);
+            }
+
+            int y2 = 30;
+
+            if (selectedOpt == 1)
+            {
+                if (selected)
+                {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, y2 - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, y2);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y2);
+                    u8g2.print("Kd:");
+                    u8g2.print(Kd);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, y2);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y2);
+                    u8g2.print("Kd:");
+                    u8g2.print(Kd);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, y2);
+                u8g2.print("Kd:");
+                u8g2.print(Kd);
+            }
+
+            break;
+        }
+        case 3:
+        {
+            u8g2.setCursor(0, 10);
+            u8g2.print("Gyro PD");
+
+            int y1 = 20;
+
+            if (selectedOpt == 0)
+            {
+                if (selected)
+                {
+
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, y1 - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, y1);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y1);
+                    u8g2.print("Kp:");
+                    u8g2.print(yawKp, 4);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, y1);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y1);
+                    u8g2.print("Kp:");
+                    u8g2.print(yawKp, 4);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, y1);
+                u8g2.print("Kp:");
+                u8g2.print(yawKp, 4);
+            }
+
+            int y2 = 30;
+
+            if (selectedOpt == 1)
+            {
+                if (selected)
+                {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, y2 - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, y2);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y2);
+                    u8g2.print("Kd:");
+                    u8g2.print(yawKd, 4);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, y2);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y2);
+                    u8g2.print("Kd:");
+                    u8g2.print(yawKd, 4);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, y2);
+                u8g2.print("Kd:");
+                u8g2.print(yawKd, 4);
+            }
+
+            break;
+        }
         }
 
         u8g2.sendBuffer();
