@@ -18,7 +18,7 @@ Adafruit_MCP23X08 mcp;
 void setup_sensors()
 {
 
-    Serial.println("Setting up mcp...");
+    // Serial.println("Setting up mcp...");
     mcp.begin_I2C(0x20, &Wire);
 
     for (int i = 0; i < 8; i++)
@@ -27,7 +27,7 @@ void setup_sensors()
         mcp.digitalWrite(i, LOW);
     }
 
-    Serial.println("Setting up sensors...");
+    // Serial.println("Setting up sensors...");
 
     for (int i = 0; i < SENSOR_COUNT; i++)
     {
@@ -37,7 +37,7 @@ void setup_sensors()
         delay(50);
         sensors[i].InitSensor();
         sensors[i].VL53L4CD_SetI2CAddress(0x2A + i * 2);
-        Serial.printf("Sensor %d initialized at address 0x%02X\n", i, 0x2A + i * 2);
+        // Serial.printf("Sensor %d initialized at address 0x%02X\n", i, 0x2A + i * 2);
     }
     for (int i = 0; i < SENSOR_COUNT; i++)
     {
@@ -45,7 +45,7 @@ void setup_sensors()
         sensors[i].VL53L4CD_StartRanging();
     }
 
-    Serial.println("Sensors setup complete.");
+    // Serial.println("Sensors setup complete.");
 }
 
 void read_sensors(uint16_t *distances)

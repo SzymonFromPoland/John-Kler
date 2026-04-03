@@ -92,7 +92,6 @@ void calibrateGyro()
 
 void setup()
 {
-    Serial.begin(115200);
     esp_task_wdt_deinit();
 
     Wire.begin(SDA, SCL);
@@ -105,7 +104,18 @@ void setup()
     u8g2.begin();
 
     drive(0, 0);
-    // servo.attach(SERVO, 500, 2500);
+
+    servo.attach(SERVO);
+    servo.write(90);
+    // for (int i = 0; i < 5; i++)
+    // {
+    //     servo.write(0);
+    //     delay(500);
+    //     servo.write(90);
+    //     delay(500);
+    //     servo.write(180);
+    //     delay(1000);
+    // }
     // startDashboard(dist, &mode, &Kp, &Kd, &speed, &max_speed, &targetYaw, &doCalibrate);
 
     if (mpu.begin(0x68))
@@ -204,7 +214,7 @@ void loop()
     float rate = (g.gyro.x - gxBias) * RAD_TO_DEG;
     yaw += rate * dt;
 
-    yawOutput = pid(targetYaw - yaw, dt, yawKp, 0.001f, yawKd, yawPD, 0.75f);
+    yawOutput = pid(targetYaw - yaw, dt, yawKp, 0.0f, yawKd, yawPD, 0.75f);
 
     // reachedYaw = started && (abs(targetYaw - yaw) <= 5.0f);
 
@@ -268,10 +278,7 @@ void loop()
     //     drive(0, 0);
     //   }
 
-    if (targetYaw != lastTargetYaw)
-        targetTime = millis();
-
-    if (millis() - lastDisplayUpdate > DISPLAY_UPDATE_INTERVAL && !started)
+    if (millis() - lastDisplayUpdate > DISPLAY_UPDATE_INTERVAL)
     {
         lastDisplayUpdate = millis();
 
@@ -543,8 +550,6 @@ void loop()
 
         u8g2.sendBuffer();
     }
-
-    lastTargetYaw = targetYaw;
 
     readTime = millis() - readStart;
     // Serial.printf("%lums\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.2f\n", readTime, dist[0], dist[1], dist[2], dist[3], dist[4], dist[5], dist[6], dist[7], dist[8], targetYaw);

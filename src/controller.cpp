@@ -135,7 +135,7 @@ void handleIR()
       command = lastCommand;
     }
 
-    Serial.printf("Address: 0x%02X, Command: 0x%02X, Repeat: %d\n", address, command, repeat);
+    // Serial.printf("Address: 0x%02X, Command: 0x%02X, Repeat: %d\n", address, command, repeat);
 
     for (IRMap &m : irMap)
     {
