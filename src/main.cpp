@@ -23,10 +23,16 @@ Servo servo;
 bool callibrate_mpu = true;
 
 float error = 0.0f;
-
-float speed = 40.0f;
-float max_speed = 40.0f;
 int last_dir = -1;
+bool reachedYaw = false;
+
+struct PDState
+{
+    float prev_error = 0;
+    float prev_derivative = 0;
+    float integral = 0;
+};
+PDState linePD, yawPD;
 
 uint16_t dist[SENSOR_COUNT];
 
@@ -35,7 +41,6 @@ float slowSpeed = 20;
 const int SLOW_THRESHOLD = threshold;
 
 float yaw = 0.0f;
-float targetYaw = 0.0f;
 float lastTargetYaw = 0.0f;
 
 float gxBias = 0;
@@ -128,25 +133,23 @@ void setup()
     }
 }
 
-float prev_error = 0.0f;
-float prev_derivative = 0.0f;
-float pd(float error, float dt, float Kp, float Kd, float alpha = 1.0f)
+float pid(float error, float dt, float Kp, float Ki, float Kd, PDState &state, float alpha = 1.0f, float integral_limit = 1000.0f)
 {
-
     if (dt < 0.002f)
         dt = 0.002f;
+
     float P = Kp * error;
-    float raw_derivative = (error - prev_error) / dt;
-    float derivative = alpha * raw_derivative + (1.0f - alpha) * prev_derivative;
 
-    prev_derivative = derivative;
-    prev_error = error;
+    state.integral += error * dt;
+    state.integral = constrain(state.integral, -integral_limit, integral_limit);
+    float I = Ki * state.integral;
+    float raw_derivative = (error - state.prev_error) / dt;
+    float derivative = alpha * raw_derivative + (1.0f - alpha) * state.prev_derivative;
 
-    float D = Kd * derivative;
+    state.prev_error = error;
+    state.prev_derivative = derivative;
 
-    float output = P + D;
-
-    return output;
+    return P + I + Kd * derivative;
 }
 
 float calc_error(uint16_t *distances)
@@ -201,28 +204,28 @@ void loop()
     float rate = (g.gyro.x - gxBias) * RAD_TO_DEG;
     yaw += rate * dt;
 
-    yawOutput = pd(targetYaw - yaw, dt, yawKp, yawKd, 0.75f);
+    yawOutput = pid(targetYaw - yaw, dt, yawKp, 0.001f, yawKd, yawPD, 0.75f);
 
-    if (started)
-    {
-        float leftSpeed = constrain(yawOutput, -speed, speed);
-        float rightSpeed = constrain(-yawOutput, -speed, speed);
-        // drive(leftSpeed, rightSpeed);
-        drive(leftSpeed, rightSpeed);
-        // drive(-speed, speed);
-    }
-    else
-    {
-        drive(0, 0);
-    }
+    // reachedYaw = started && (abs(targetYaw - yaw) <= 5.0f);
 
-    // read_sensors(dist);
+    float leftSpeed = constrain(yawOutput, -speed, speed);
+    float rightSpeed = constrain(-yawOutput, -speed, speed);
+
+    // if (reachedYaw)
+    // {
+    //     leftSpeed = speed;
+    //     rightSpeed = speed;
+    //     // read_sensors(dist);
+    // }
+
+    drive(started ? leftSpeed : 0, started ? rightSpeed : 0);
+
     error = calc_error(dist);
 
-    if (error < -0.01)
-        last_dir = -1;
-    else if (error > 0.1)
-        last_dir = 1;
+    // if (error < -0.01)
+    //     last_dir = -1;
+    // else if (error > 0.1)
+    //     last_dir = 1;
 
     //   bool none = true;
     //   bool anyUnderThreshold = false;
@@ -234,7 +237,8 @@ void loop()
     //       anyUnderThreshold = true;
     //   }
 
-    float output = pd(error, dt, Kp / 100, Kd / 100);
+    // float output = pid(error, dt, Kp, 0.0f, Kd, linePD);
+    float output;
 
     //   int left = 0, right = 0;
     //   if (started)
@@ -275,6 +279,9 @@ void loop()
         u8g2.setFont(u8g2_font_6x10_tf);
         u8g2.setDrawColor(1);
 
+        int y1 = 20;
+        int y2 = 30;
+
         switch (menu)
         {
         case 0:
@@ -307,13 +314,20 @@ void loop()
         }
         case 1:
         {
-            u8g2.setCursor(0, 10);
+            u8g2.setCursor(1, 10);
+            if (selected)
+            {
+                u8g2.setDrawColor(1);
+                u8g2.drawBox(0, 2, 60, 10);
+                u8g2.setDrawColor(0);
+            }
             u8g2.print("TY: ");
             u8g2.print(targetYaw, 1);
-            u8g2.setCursor(0, 20);
+            u8g2.setCursor(1, 20);
+            u8g2.setDrawColor(1);
             u8g2.print("CY: ");
             u8g2.print(yaw, 1);
-            u8g2.setCursor(0, 30);
+            u8g2.setCursor(1, 30);
             u8g2.print("YO: ");
             u8g2.print(yawOutput, 1);
             u8g2.drawCircle(80, 16, 15);
@@ -323,9 +337,7 @@ void loop()
         case 2:
         {
             u8g2.setCursor(0, 10);
-            u8g2.print("Drive PD");
-
-            int y1 = 20;
+            u8g2.print("Speed control");
 
             if (selectedOpt == 0)
             {
@@ -338,8 +350,8 @@ void loop()
                     u8g2.setCursor(0, y1);
                     u8g2.print(">");
                     u8g2.setCursor(8, y1);
-                    u8g2.print("Kp:");
-                    u8g2.print(Kp);
+                    u8g2.print("Speed: ");
+                    u8g2.print(speed);
                     u8g2.setDrawColor(1);
                 }
                 else
@@ -347,18 +359,16 @@ void loop()
                     u8g2.setCursor(0, y1);
                     u8g2.print(">");
                     u8g2.setCursor(8, y1);
-                    u8g2.print("Kp:");
-                    u8g2.print(Kp);
+                    u8g2.print("Speed: ");
+                    u8g2.print(speed);
                 }
             }
             else
             {
                 u8g2.setCursor(8, y1);
-                u8g2.print("Kp:");
-                u8g2.print(Kp);
+                u8g2.print("Speed: ");
+                u8g2.print(speed);
             }
-
-            int y2 = 30;
 
             if (selectedOpt == 1)
             {
@@ -370,7 +380,76 @@ void loop()
                     u8g2.setCursor(0, y2);
                     u8g2.print(">");
                     u8g2.setCursor(8, y2);
-                    u8g2.print("Kd:");
+                    u8g2.print("MAX: ");
+                    u8g2.print(max_speed);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, y2);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y2);
+                    u8g2.print("MAX: ");
+                    u8g2.print(max_speed);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, y2);
+                u8g2.print("MAX: ");
+                u8g2.print(max_speed);
+            }
+
+            break;
+        }
+
+        case 3:
+        {
+            u8g2.setCursor(0, 10);
+            u8g2.print("Drive PD");
+
+            if (selectedOpt == 0)
+            {
+                if (selected)
+                {
+
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, y1 - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, y1);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y1);
+                    u8g2.print("Kp: ");
+                    u8g2.print(Kp);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, y1);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y1);
+                    u8g2.print("Kp: ");
+                    u8g2.print(Kp);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, y1);
+                u8g2.print("Kp: ");
+                u8g2.print(Kp);
+            }
+
+            if (selectedOpt == 1)
+            {
+                if (selected)
+                {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, y2 - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, y2);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y2);
+                    u8g2.print("Kd: ");
                     u8g2.print(Kd);
                     u8g2.setDrawColor(1);
                 }
@@ -379,25 +458,23 @@ void loop()
                     u8g2.setCursor(0, y2);
                     u8g2.print(">");
                     u8g2.setCursor(8, y2);
-                    u8g2.print("Kd:");
+                    u8g2.print("Kd: ");
                     u8g2.print(Kd);
                 }
             }
             else
             {
                 u8g2.setCursor(8, y2);
-                u8g2.print("Kd:");
+                u8g2.print("Kd: ");
                 u8g2.print(Kd);
             }
 
             break;
         }
-        case 3:
+        case 4:
         {
             u8g2.setCursor(0, 10);
             u8g2.print("Gyro PD");
-
-            int y1 = 20;
 
             if (selectedOpt == 0)
             {
@@ -410,8 +487,8 @@ void loop()
                     u8g2.setCursor(0, y1);
                     u8g2.print(">");
                     u8g2.setCursor(8, y1);
-                    u8g2.print("Kp:");
-                    u8g2.print(yawKp, 4);
+                    u8g2.print("Kp: ");
+                    u8g2.print(yawKp, 6);
                     u8g2.setDrawColor(1);
                 }
                 else
@@ -419,18 +496,16 @@ void loop()
                     u8g2.setCursor(0, y1);
                     u8g2.print(">");
                     u8g2.setCursor(8, y1);
-                    u8g2.print("Kp:");
-                    u8g2.print(yawKp, 4);
+                    u8g2.print("Kp: ");
+                    u8g2.print(yawKp, 6);
                 }
             }
             else
             {
                 u8g2.setCursor(8, y1);
-                u8g2.print("Kp:");
-                u8g2.print(yawKp, 4);
+                u8g2.print("Kp: ");
+                u8g2.print(yawKp, 6);
             }
-
-            int y2 = 30;
 
             if (selectedOpt == 1)
             {
@@ -442,8 +517,8 @@ void loop()
                     u8g2.setCursor(0, y2);
                     u8g2.print(">");
                     u8g2.setCursor(8, y2);
-                    u8g2.print("Kd:");
-                    u8g2.print(yawKd, 4);
+                    u8g2.print("Kd: ");
+                    u8g2.print(yawKd, 6);
                     u8g2.setDrawColor(1);
                 }
                 else
@@ -451,15 +526,15 @@ void loop()
                     u8g2.setCursor(0, y2);
                     u8g2.print(">");
                     u8g2.setCursor(8, y2);
-                    u8g2.print("Kd:");
-                    u8g2.print(yawKd, 4);
+                    u8g2.print("Kd: ");
+                    u8g2.print(yawKd, 6);
                 }
             }
             else
             {
                 u8g2.setCursor(8, y2);
-                u8g2.print("Kd:");
-                u8g2.print(yawKd, 4);
+                u8g2.print("Kd: ");
+                u8g2.print(yawKd, 6);
             }
 
             break;
@@ -472,5 +547,5 @@ void loop()
     lastTargetYaw = targetYaw;
 
     readTime = millis() - readStart;
-    Serial.printf("%lums\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.2f\n", readTime, dist[0], dist[1], dist[2], dist[3], dist[4], dist[5], dist[6], dist[7], dist[8], targetYaw);
+    // Serial.printf("%lums\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.2f\n", readTime, dist[0], dist[1], dist[2], dist[3], dist[4], dist[5], dist[6], dist[7], dist[8], targetYaw);
 }

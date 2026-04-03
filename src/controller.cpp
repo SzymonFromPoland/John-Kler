@@ -35,23 +35,8 @@ IRMap irMap[] = {
     {0x4A, "8"},
     {0x52, "9"}};
 
-float stepKp = 10.0f;
-float stepKd = 1.0f;
-float Kp = 800.0f;
-float Kd = 65.0f;
-
-float yawStepKp = 0.1f;
-float yawStepKd = 0.0001f;
-float yawKp = 0.8f;
-float yawKd = 0.0005f;
-
-bool started = false;
-bool hold_led = false;
-bool doCalibrate = false;
-int mode = 1;
-int menu = 0;
-bool selected = false;
-int selectedOpt = 0;
+uint8_t address;
+uint8_t command;
 
 void saveParams()
 {
@@ -60,16 +45,20 @@ void saveParams()
   prefs_global.putFloat("Kd", Kd);
   prefs_global.putFloat("yawKp", yawKp);
   prefs_global.putFloat("yawKd", yawKd);
+  prefs_global.putFloat("speed", speed);
+  prefs_global.putFloat("max_speed", max_speed);
   prefs_global.end();
 }
 
 void loadParams()
 {
   prefs_global.begin("robot", false);
-  Kp = prefs_global.getFloat("Kp", 800.0f);
-  Kd = prefs_global.getFloat("Kd", 65.0f);
+  Kp = prefs_global.getFloat("Kp", 8.0f);
+  Kd = prefs_global.getFloat("Kd", 0.65f);
   yawKp = prefs_global.getFloat("yawKp", 0.8f);
   yawKd = prefs_global.getFloat("yawKd", 0.0005f);
+  speed = prefs_global.getFloat("speed", 50.0f);
+  max_speed = prefs_global.getFloat("max_speed", 50.0f);
   prefs_global.end();
 }
 
@@ -127,17 +116,42 @@ void handleIR()
 
   case NEC:
   {
-    uint8_t address = (irResults.value >> 24) & 0xFF;
-    uint8_t command = (irResults.value >> 8) & 0xFF;
+
     bool repeat = irResults.repeat;
+
+    static uint8_t lastAddress = 0xFF;
+    static uint8_t lastCommand = 0xFF;
 
     if (!repeat)
     {
-      for (IRMap &m : irMap)
-      {
-        if (m.code == command)
-        {
+      address = (irResults.value >> 24) & 0xFF;
+      command = (irResults.value >> 8) & 0xFF;
+      lastAddress = address;
+      lastCommand = command;
+    }
+    else
+    {
+      address = lastAddress;
+      command = lastCommand;
+    }
 
+    Serial.printf("Address: 0x%02X, Command: 0x%02X, Repeat: %d\n", address, command, repeat);
+
+    for (IRMap &m : irMap)
+    {
+      if (m.code == command)
+      {
+        if (strcmp(m.name, "E") == 0)
+        {
+          started = true;
+        }
+        else if (strcmp(m.name, "D") == 0)
+        {
+          started = false;
+        }
+
+        if (!started)
+        {
           if (strcmp(m.name, "A") == 0)
           {
             mode = 1;
@@ -150,27 +164,33 @@ void handleIR()
           {
             mode = 3;
           }
-          else if (strcmp(m.name, "E") == 0)
-          {
-            started = true;
-          }
-          else if (strcmp(m.name, "D") == 0)
-          {
-            started = false;
-          }
-          else if (strcmp(m.name, "F") == 0)
+          else if (strcmp(m.name, "F") == 0 && !repeat)
           {
             doCalibrate = true;
           }
-          if (strcmp(m.name, "OK") == 0)
+          else if (strcmp(m.name, "OK") == 0 && !repeat)
           {
-            selected = !selected;
+            if (menu != 0)
+              selected = !selected;
           }
           else if (strcmp(m.name, "RIGHT") == 0)
           {
             if (selected)
             {
               if (menu == 2)
+              {
+                if (selectedOpt == 0)
+                {
+                  speed += speedStep;
+                  saveParams();
+                }
+                if (selectedOpt == 1)
+                {
+                  max_speed += speedStep;
+                  saveParams();
+                }
+              }
+              if (menu == 3)
               {
                 if (selectedOpt == 0)
                 {
@@ -183,7 +203,7 @@ void handleIR()
                   saveParams();
                 }
               }
-              if (menu == 3)
+              if (menu == 4)
               {
                 if (selectedOpt == 0)
                 {
@@ -196,8 +216,15 @@ void handleIR()
                   saveParams();
                 }
               }
+
+              if (menu == 1)
+              {
+                targetYaw += 5;
+                if (targetYaw > 180)
+                  targetYaw = -180;
+              }
             }
-            else
+            else if (!repeat)
             {
               menu++;
               if (menu >= MENU_COUNT)
@@ -213,6 +240,19 @@ void handleIR()
               {
                 if (selectedOpt == 0)
                 {
+                  speed -= speedStep;
+                  saveParams();
+                }
+                if (selectedOpt == 1)
+                {
+                  max_speed -= speedStep;
+                  saveParams();
+                }
+              }
+              if (menu == 3)
+              {
+                if (selectedOpt == 0)
+                {
                   Kp -= stepKp;
                   saveParams();
                 }
@@ -222,7 +262,7 @@ void handleIR()
                   saveParams();
                 }
               }
-              if (menu == 3)
+              if (menu == 4)
               {
                 if (selectedOpt == 0)
                 {
@@ -235,26 +275,32 @@ void handleIR()
                   saveParams();
                 }
               }
+              if (menu == 1)
+              {
+                targetYaw -= 5;
+                if (targetYaw < -180)
+                  targetYaw = 180;
+              }
             }
-            else
+            else if (!repeat)
             {
               menu--;
               if (menu < 0)
                 menu = MENU_COUNT - 1;
             }
           }
-          else if (strcmp(m.name, "UP") == 0)
+          else if (strcmp(m.name, "UP") == 0 && !repeat)
           {
-            if (!selected && (menu == 2 || menu == 3))
+            if (!selected && (menu == 2 || menu == 3 || menu == 4))
             {
               selectedOpt++;
               if (selectedOpt > 1)
                 selectedOpt = 0;
             }
           }
-          else if (strcmp(m.name, "DOWN") == 0)
+          else if (strcmp(m.name, "DOWN") == 0 && !repeat)
           {
-            if (!selected && (menu == 2 || menu == 3))
+            if (!selected && (menu == 2 || menu == 3 || menu == 4))
             {
               selectedOpt--;
               if (selectedOpt < 0)
@@ -262,8 +308,33 @@ void handleIR()
             }
           }
 
-          break;
+          else if (strcmp(m.name, "1") == 0 && !repeat)
+          {
+            if (selected && menu == 1)
+              targetYaw = -180;
+          }
+          else if (strcmp(m.name, "2") == 0 && !repeat)
+          {
+            if (selected && menu == 1)
+              targetYaw = -90;
+          }
+          else if (strcmp(m.name, "3") == 0 && !repeat)
+          {
+            if (selected && menu == 1)
+              targetYaw = 0;
+          }
+          else if (strcmp(m.name, "4") == 0 && !repeat)
+          {
+            if (selected && menu == 1)
+              targetYaw = 90;
+          }
+          else if (strcmp(m.name, "5") == 0 && !repeat)
+          {
+            if (selected && menu == 1)
+              targetYaw = 180;
+          }
         }
+        break;
       }
     }
 
