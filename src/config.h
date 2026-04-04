@@ -27,7 +27,10 @@
 
 #define SERVO 1
 
-const int threshold = 600;
+#define BAT 7
+
+const int threshold = 300;
+const int servo_midpoint = 95;
 
 extern float Kp;
 extern float Kd;
@@ -46,6 +49,9 @@ extern float max_speed;
 extern bool started;
 extern bool doCalibrate;
 extern bool hold_led;
+extern bool move_servo;
+extern bool test_servo;
+
 
 extern int mode;
 extern int menu;

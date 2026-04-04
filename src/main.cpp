@@ -13,81 +13,62 @@
 #include <motors.h>
 #include <sensors.h>
 #include <controller.h>
-// #include <dashboard.h>
 
-Preferences prefs_global;
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+Preferences prefs_global;
 Adafruit_MPU6050 mpu;
 Servo servo;
 
-bool callibrate_mpu = true;
-
-float error = 0.0f;
-int last_dir = -1;
-bool reachedYaw = false;
-
-struct PDState
-{
-    float prev_error = 0;
-    float prev_derivative = 0;
-    float integral = 0;
-};
-PDState linePD, yawPD;
-
 uint16_t dist[SENSOR_COUNT];
 
-unsigned long slowUntil = 0;
-float slowSpeed = 20;
-const int SLOW_THRESHOLD = threshold;
+int last_dir = -1;
+bool reached_yaw = false;
+bool servo_toggle = true;
 
 float yaw = 0.0f;
 float lastTargetYaw = 0.0f;
-
 float gxBias = 0;
 
 void calibrateGyro()
 {
-    if (callibrate_mpu)
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_spleen8x16_me);
+
+    const char *line1 = "CALIBRATING...";
+    const char *line2 = "DON'T MOVE ROBOT";
+
+    u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(line1)) / 2, 16);
+    u8g2.println(line1);
+
+    u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(line2)) / 2, 32);
+    u8g2.println(line2);
+
+    u8g2.sendBuffer();
+    delay(1000);
+
+    int samples = 200;
+    float sum = 0;
+    sensors_event_t a, g, temp;
+
+    for (int i = 0; i < samples; i++)
     {
-        u8g2.clearBuffer();
-        u8g2.setFont(u8g2_font_spleen8x16_me);
-
-        const char *line1 = "CALIBRATING...";
-        const char *line2 = "DON'T MOVE ROBOT";
-
-        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(line1)) / 2, 16);
-        u8g2.println(line1);
-
-        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(line2)) / 2, 32);
-        u8g2.println(line2);
-
-        u8g2.sendBuffer();
-        delay(1000);
-
-        int samples = 200;
-        float sum = 0;
-        sensors_event_t a, g, temp;
-
-        for (int i = 0; i < samples; i++)
-        {
-            mpu.getEvent(&a, &g, &temp);
-            sum += g.gyro.x;
-        }
-        gxBias = sum / (float)samples;
-
-        u8g2.clearBuffer();
-        const char *done1 = "CALIBRATION";
-        const char *done2 = "DONE";
-
-        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done1)) / 2, 16);
-        u8g2.println(done1);
-
-        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done2)) / 2, 32);
-        u8g2.println(done2);
-
-        u8g2.sendBuffer();
-        delay(1000);
+        mpu.getEvent(&a, &g, &temp);
+        sum += g.gyro.x;
     }
+    gxBias = sum / (float)samples;
+
+    u8g2.clearBuffer();
+    const char *done1 = "CALIBRATION";
+    const char *done2 = "DONE";
+
+    u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done1)) / 2, 16);
+    u8g2.println(done1);
+
+    u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done2)) / 2, 32);
+    u8g2.println(done2);
+
+    u8g2.sendBuffer();
+    delay(1000);
 }
 
 void setup()
@@ -105,18 +86,10 @@ void setup()
 
     drive(0, 0);
 
+    gpio_reset_pin((gpio_num_t)SERVO);
+    pinMode(SERVO, OUTPUT);
+    pinMode(BAT, INPUT);
     servo.attach(SERVO);
-    servo.write(90);
-    // for (int i = 0; i < 5; i++)
-    // {
-    //     servo.write(0);
-    //     delay(500);
-    //     servo.write(90);
-    //     delay(500);
-    //     servo.write(180);
-    //     delay(1000);
-    // }
-    // startDashboard(dist, &mode, &Kp, &Kd, &speed, &max_speed, &targetYaw, &doCalibrate);
 
     if (mpu.begin(0x68))
     {
@@ -142,6 +115,15 @@ void setup()
         delay(750);
     }
 }
+
+struct PDState
+{
+    float prev_error = 0;
+    float prev_derivative = 0;
+    float integral = 0;
+};
+
+PDState linePD, yawPD;
 
 float pid(float error, float dt, float Kp, float Ki, float Kd, PDState &state, float alpha = 1.0f, float integral_limit = 1000.0f)
 {
@@ -182,15 +164,58 @@ float calc_error(uint16_t *distances)
 float dt = 0;
 unsigned long lastTime = 0;
 unsigned long readTime = 0;
-unsigned long lastDisplayUpdate = 0;
 unsigned long targetTime = 0;
+unsigned long servoTime = 0;
+unsigned long lastDisplayUpdate = 0;
+const unsigned long SERVO_ROTATION_TIME = 180;
 const unsigned long DISPLAY_UPDATE_INTERVAL = 100;
 const unsigned long TARGET_ARROW_SHOW_TIME = 1000;
 
-float yawOutput = 0.0f;
-float yaw_gyro = 0.0f;
-float yaw_comp = 0.0f;
-const float comp_alpha = 0.98f;
+float yaw_output = 0.0f;
+
+// TODO - add tactics
+// TODO - M1 tornado
+// TODO - M2 kat i pizda
+// TODO - M3 łuk flagowy
+// TODO - M4 flaga i czeka
+
+// TODO - fix logic
+// TODO - tune drive pid
+
+void handleServo()
+{
+
+    if (!started)
+    {
+        servo_toggle = true;
+        move_servo = false;
+    }
+
+    if (test_servo)
+    {
+        servo.write(0);
+        if (millis() - servoTime > SERVO_ROTATION_TIME)
+        {
+            test_servo = false;
+        }
+    }
+    else if (servo_toggle && move_servo)
+    {
+        servo.write(0);
+        if (millis() - servoTime > SERVO_ROTATION_TIME)
+        {
+            servo_toggle = false;
+        }
+    }
+    else
+    {
+        servo.write(servo_midpoint);
+        servoTime = millis();
+    }
+}
+
+float leftSpeed;
+float rightSpeed;
 
 void loop()
 {
@@ -210,73 +235,73 @@ void loop()
 
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
-
     float rate = (g.gyro.x - gxBias) * RAD_TO_DEG;
     yaw += rate * dt;
+    yaw_output = pid(targetYaw - yaw, dt, yawKp, 0.0f, yawKd, yawPD, 0.75f);
+    reached_yaw = abs(targetYaw - yaw) <= 5.0f;
 
-    yawOutput = pid(targetYaw - yaw, dt, yawKp, 0.0f, yawKd, yawPD, 0.75f);
+    if (mode == 1)
+    {
+        read_sensors(dist);
+    }
+    else if (mode == 2)
+    {
+        if (reached_yaw || !started)
+            read_sensors(dist);
+    }
 
-    // reachedYaw = started && (abs(targetYaw - yaw) <= 5.0f);
+    float error = calc_error(dist);
+    float output = pid(error, dt, Kp, 0.0f, Kd, linePD);
 
-    float leftSpeed = constrain(yawOutput, -speed, speed);
-    float rightSpeed = constrain(-yawOutput, -speed, speed);
+    if (error > 0.1)
+        last_dir = 1;
+    else if (error < -0.1)
+        last_dir = -1;
 
-    // if (reachedYaw)
-    // {
-    //     leftSpeed = speed;
-    //     rightSpeed = speed;
-    //     // read_sensors(dist);
-    // }
+    bool any_ut = false;
+    for (uint16_t d : dist)
+    {
+        if (d < threshold)
+        {
+            any_ut = true;
+            break;
+        }
+    }
+
+    if (started)
+    {
+        if (mode == 1)
+        {
+            move_servo = true;
+            if (any_ut)
+            {
+
+                float ramp_up1 = speed;
+                if (dist[3] < threshold || dist[4] < threshold || dist[5] < threshold)
+                    ramp_up1 = constrain(speed + ramp_up1 + 0.5f, -max_speed, max_speed);
+                leftSpeed = ramp_up1 + output;
+                rightSpeed = ramp_up1 - output;
+            }
+            else
+            {
+                leftSpeed = speed * last_dir;
+                rightSpeed = speed * -last_dir;
+            }
+        }
+        else if (mode == 2)
+        {
+            move_servo = true;
+            leftSpeed = 35 + yaw_output;
+            rightSpeed = 35 - yaw_output;
+        }
+    }
+
+    leftSpeed = constrain(leftSpeed, -max_speed, max_speed);
+    rightSpeed = constrain(rightSpeed, -max_speed, max_speed);
 
     drive(started ? leftSpeed : 0, started ? rightSpeed : 0);
 
-    error = calc_error(dist);
-
-    // if (error < -0.01)
-    //     last_dir = -1;
-    // else if (error > 0.1)
-    //     last_dir = 1;
-
-    //   bool none = true;
-    //   bool anyUnderThreshold = false;
-    //   for (int i = 0; i < SENSOR_COUNT; i++)
-    //   {
-    //     if (dist_ut[i])
-    //       none = false;
-    //     if (dist[i] < SLOW_THRESHOLD)
-    //       anyUnderThreshold = true;
-    //   }
-
-    // float output = pid(error, dt, Kp, 0.0f, Kd, linePD);
-    float output;
-
-    //   int left = 0, right = 0;
-    //   if (started)
-    //   {
-    //     if (none)
-    //     {
-    //       float rotSpeed = speed;
-    //       left = last_dir * rotSpeed;
-    //       right = -last_dir * rotSpeed;
-    //     }
-    //     else
-    //     {
-    //       left = speed + output;
-    //       right = speed - output;
-    //     }
-
-    //     if (dist[4] > 100)
-    //       start_wait = millis();
-
-    //     if (millis() - start_wait > 850)
-    //       drive(100, 100);
-    //     else
-    //       drive(constrain(left, -max_speed, max_speed), constrain(right, -max_speed, max_speed));
-    //   }
-    //   else
-    //   {
-    //     drive(0, 0);
-    //   }
+    handleServo();
 
     if (millis() - lastDisplayUpdate > DISPLAY_UPDATE_INTERVAL)
     {
@@ -304,9 +329,9 @@ void loop()
             u8g2.print("deg ");
 
             u8g2.setCursor(0, 20);
-            u8g2.print("e:");
+            u8g2.print("e: ");
             u8g2.print(error, 2);
-            u8g2.print(" o:");
+            u8g2.print(" o: ");
             u8g2.print(output, 2);
 
             for (int i = 0; i < SENSOR_COUNT; i++)
@@ -317,6 +342,12 @@ void loop()
                 else
                     u8g2.drawFrame(x, 24, 7, 8);
             }
+
+            u8g2.setCursor(72, 32);
+            u8g2.print("B: ");
+            u8g2.print(analogRead(BAT) * 0.00349f, 1);
+            u8g2.print("V");
+
             break;
         }
         case 1:
@@ -336,7 +367,7 @@ void loop()
             u8g2.print(yaw, 1);
             u8g2.setCursor(1, 30);
             u8g2.print("YO: ");
-            u8g2.print(yawOutput, 1);
+            u8g2.print(yaw_output, 1);
             u8g2.drawCircle(80, 16, 15);
             u8g2.drawLine(80, 16, 80 + (int)(14 * sin((targetYaw - yaw) * DEG_TO_RAD)), 16 - (int)(14 * cos((targetYaw - yaw) * DEG_TO_RAD)));
             break;
@@ -552,5 +583,4 @@ void loop()
     }
 
     readTime = millis() - readStart;
-    // Serial.printf("%lums\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.2f\n", readTime, dist[0], dist[1], dist[2], dist[3], dist[4], dist[5], dist[6], dist[7], dist[8], targetYaw);
 }

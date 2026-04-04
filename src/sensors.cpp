@@ -62,6 +62,6 @@ void read_sensors(uint16_t *distances)
     {
         sensors[i].VL53L4CD_ClearInterrupt();
         sensors[i].VL53L4CD_GetResult(&results);
-        distances[i] = (results.range_status == 0) ? results.distance_mm : threshold;
+        distances[i] = (results.range_status == 0) ? min(results.distance_mm, (uint16_t)threshold) : threshold;
     }
 }
