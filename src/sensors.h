@@ -8,6 +8,6 @@
 #include <config.h>
 
 void setup_sensors();
-void read_sensors(uint16_t *distances);
+void read_sensors(VL53L4CD_Result_t *results, bool ignore = false);
 
 #endif

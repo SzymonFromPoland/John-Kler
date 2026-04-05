@@ -47,6 +47,8 @@ void saveParams()
   prefs_global.putFloat("yawKd", yawKd);
   prefs_global.putFloat("speed", speed);
   prefs_global.putFloat("max_speed", max_speed);
+  prefs_global.putFloat("rot_speed", rot_speed);
+  prefs_global.putFloat("ramp_up_gain", ramp_up_step);
   prefs_global.end();
 }
 
@@ -59,6 +61,8 @@ void loadParams()
   yawKd = prefs_global.getFloat("yawKd", 0.0005f);
   speed = prefs_global.getFloat("speed", 50.0f);
   max_speed = prefs_global.getFloat("max_speed", 50.0f);
+  rot_speed = prefs_global.getFloat("rot_speed", 60.0f);
+  ramp_up_step = prefs_global.getFloat("ramp_up_gain", 1.0f);
   prefs_global.end();
 }
 
@@ -135,12 +139,11 @@ void handleIR()
       command = lastCommand;
     }
 
-    // Serial.printf("Address: 0x%02X, Command: 0x%02X, Repeat: %d\n", address, command, repeat);
-
     for (IRMap &m : irMap)
     {
       if (m.code == command)
       {
+
         if (strcmp(m.name, "E") == 0)
         {
           started = true;
@@ -152,22 +155,13 @@ void handleIR()
 
         if (!started)
         {
-          // if (strcmp(m.name, "A") == 0)
-          // {
-          //   mode = 1;
-          // }
-          // else if (strcmp(m.name, "B") == 0)
-          // {
-          //   mode = 2;
-          // }
-          // else if (strcmp(m.name, "C") == 0)
-          // {
-          //   mode = 3;
-          // }
-          // else
           if (strcmp(m.name, "F") == 0 && !repeat)
           {
             doCalibrate = true;
+          }
+          if (strcmp(m.name, "A") == 0 && !repeat)
+          {
+            detect_flag = !detect_flag;
           }
           else if (strcmp(m.name, "OK") == 0 && !repeat)
           {
@@ -192,6 +186,18 @@ void handleIR()
                 {
                   max_speed += speedStep;
                   max_speed = constrain(max_speed, 0, 100);
+                  saveParams();
+                }
+                if (selectedOpt == 2)
+                {
+                  rot_speed += speedStep;
+                  rot_speed = constrain(rot_speed, 0, 100);
+                  saveParams();
+                }
+                if (selectedOpt == 3)
+                {
+                  ramp_up_step += 0.05;
+                  ramp_up_step = constrain(ramp_up_step, 0, 100);
                   saveParams();
                 }
               }
@@ -231,8 +237,9 @@ void handleIR()
             }
             else if (!repeat)
             {
+              selectedOpt = 0;
               menu++;
-              if (menu >= MENU_COUNT)
+              if (menu > MENU_COUNT - 1)
                 menu = 0;
             }
           }
@@ -253,6 +260,18 @@ void handleIR()
                 {
                   max_speed -= speedStep;
                   max_speed = constrain(max_speed, 0, 100);
+                  saveParams();
+                }
+                if (selectedOpt == 2)
+                {
+                  rot_speed -= speedStep;
+                  rot_speed = constrain(rot_speed, 0, 100);
+                  saveParams();
+                }
+                if (selectedOpt == 3)
+                {
+                  ramp_up_step -= 0.05;
+                  ramp_up_step = constrain(ramp_up_step, 0, 100);
                   saveParams();
                 }
               }
@@ -291,6 +310,7 @@ void handleIR()
             }
             else if (!repeat)
             {
+              selectedOpt = 0;
               menu--;
               if (menu < 0)
                 menu = MENU_COUNT - 1;
@@ -298,54 +318,53 @@ void handleIR()
           }
           else if (strcmp(m.name, "UP") == 0 && !repeat)
           {
-            if (!selected && (menu == 2 || menu == 3 || menu == 4))
+            if (!selected)
             {
-              selectedOpt++;
-              if (selectedOpt > 1)
-                selectedOpt = 0;
+              selectedOpt--;
+              if (selectedOpt < 0)
+                selectedOpt = menus[menu].optCount - 1;
             }
           }
           else if (strcmp(m.name, "DOWN") == 0 && !repeat)
           {
-            if (!selected && (menu == 2 || menu == 3 || menu == 4))
+            if (!selected)
             {
-              selectedOpt--;
-              if (selectedOpt < 0)
-                selectedOpt = 1;
+              selectedOpt++;
+              if (selectedOpt > menus[menu].optCount - 1)
+                selectedOpt = 0;
             }
           }
-
           else if (strcmp(m.name, "1") == 0 && !repeat)
           {
-            if (selected && menu == 0)
+            if (selected && menu == 1)
               targetYaw = -180;
             if (menu == 0)
               mode = 1;
           }
           else if (strcmp(m.name, "2") == 0 && !repeat)
           {
-            if (selected && menu == 0)
+            if (selected && menu == 1)
               targetYaw = -90;
             if (menu == 0)
               mode = 2;
           }
           else if (strcmp(m.name, "3") == 0 && !repeat)
           {
-            if (selected && menu == 0)
+            if (selected && menu == 1)
               targetYaw = 0;
             if (menu == 0)
               mode = 3;
           }
           else if (strcmp(m.name, "4") == 0 && !repeat)
           {
-            if (selected && menu == 0)
+            if (selected && menu == 1)
               targetYaw = 90;
             if (menu == 0)
               mode = 4;
           }
           else if (strcmp(m.name, "5") == 0 && !repeat)
           {
-            if (selected && menu == 0)
+            if (selected && menu == 1)
               targetYaw = 180;
             if (menu == 0)
               mode = 5;

@@ -19,10 +19,13 @@ Preferences prefs_global;
 Adafruit_MPU6050 mpu;
 Servo servo;
 
+VL53L4CD_Result_t results[SENSOR_COUNT];
 uint16_t dist[SENSOR_COUNT];
+bool flag[SENSOR_COUNT];
 
 int last_dir = -1;
 bool reached_yaw = false;
+bool close_to_yaw = false;
 bool servo_toggle = true;
 
 float yaw = 0.0f;
@@ -73,6 +76,8 @@ void calibrateGyro()
 
 void setup()
 {
+    Serial.begin(115200);
+
     esp_task_wdt_deinit();
 
     Wire.begin(SDA, SCL);
@@ -173,14 +178,14 @@ const unsigned long TARGET_ARROW_SHOW_TIME = 1000;
 
 float yaw_output = 0.0f;
 
-// TODO - add tactics
-// TODO - M1 tornado
-// TODO - M2 kat i pizda
-// TODO - M3 łuk flagowy
-// TODO - M4 flaga i czeka
-
-// TODO - fix logic
-// TODO - tune drive pid
+// [ ] - add tactics
+// [x] -    M1 tornado
+// [x] -    M2 kat i pizda
+// [ ] -    M3 łuk flagowys
+// [ ] -    M4 flaga i czeka
+// [ ] - tune drive pid
+// [ ] - wykrywanie flagi
+// [x] - M2 w miejscu
 
 void handleServo()
 {
@@ -216,6 +221,7 @@ void handleServo()
 
 float leftSpeed;
 float rightSpeed;
+float ramp_up1;
 
 void loop()
 {
@@ -239,16 +245,29 @@ void loop()
     yaw += rate * dt;
     yaw_output = pid(targetYaw - yaw, dt, yawKp, 0.0f, yawKd, yawPD, 0.75f);
     reached_yaw = abs(targetYaw - yaw) <= 5.0f;
+    close_to_yaw = abs(targetYaw - yaw) <= 25.0f;
 
-    if (mode == 1)
+    // if (mode == 1)
+    // {
+    //     read_sensors(dist);
+    // }
+    // else if (mode == 2)
+    // {
+    //     if (reached_yaw || !started)
+    //         read_sensors(dist);
+    // }
+
+    read_sensors(results);
+
+    for (int i = 0; i < SENSOR_COUNT; i++)
     {
-        read_sensors(dist);
+        dist[i] = results[i].distance_mm;
+        results[i].number_of_spad = (results[i].number_of_spad > 0) ? results[i].number_of_spad : 1;
+        float index = ((float)results[i].signal_per_spad_kcps * ((float)dist[i] * (float)dist[i])) / (float)results[i].number_of_spad;
+        // Serial.printf("%d\t", (int)index);
+        flag[i] = (index > 5000000);
     }
-    else if (mode == 2)
-    {
-        if (reached_yaw || !started)
-            read_sensors(dist);
-    }
+    Serial.println();
 
     float error = calc_error(dist);
     float output = pid(error, dt, Kp, 0.0f, Kd, linePD);
@@ -275,25 +294,29 @@ void loop()
             move_servo = true;
             if (any_ut)
             {
-
-                float ramp_up1 = speed;
                 if (dist[3] < threshold || dist[4] < threshold || dist[5] < threshold)
-                    ramp_up1 = constrain(speed + ramp_up1 + 0.5f, -max_speed, max_speed);
-                leftSpeed = ramp_up1 + output;
-                rightSpeed = ramp_up1 - output;
+                    ramp_up1 = constrain(ramp_up1 + ramp_up_step, -max_speed, max_speed);
+                leftSpeed = (speed + ramp_up1) + output;
+                rightSpeed = (speed + ramp_up1) - output;
             }
             else
             {
+                ramp_up1 = 0.0f;
                 leftSpeed = speed * last_dir;
                 rightSpeed = speed * -last_dir;
             }
         }
         else if (mode == 2)
         {
+
             move_servo = true;
-            leftSpeed = 35 + yaw_output;
-            rightSpeed = 35 - yaw_output;
+            leftSpeed = (close_to_yaw ? rot_speed : 0) + yaw_output;
+            rightSpeed = (close_to_yaw ? rot_speed : 0) - yaw_output;
         }
+    }
+    else
+    {
+        ramp_up1 = 0.0f;
     }
 
     leftSpeed = constrain(leftSpeed, -max_speed, max_speed);
@@ -314,7 +337,8 @@ void loop()
         int y1 = 20;
         int y2 = 30;
 
-        switch (menu)
+        Menu &m = menus[menu];
+        switch (m.id)
         {
         case 0:
         {
@@ -322,11 +346,10 @@ void loop()
             u8g2.print(started ? "ON " : "OFF");
             u8g2.print(" M");
             u8g2.print(mode);
-            u8g2.print(" ");
+            u8g2.print(" FD: ");
+            u8g2.print(detect_flag ? "YES " : "NO  ");
             u8g2.print(readTime);
-            u8g2.print("ms ");
-            u8g2.print(yaw);
-            u8g2.print("deg ");
+            u8g2.print("ms");
 
             u8g2.setCursor(0, 20);
             u8g2.print("e: ");
@@ -337,13 +360,22 @@ void loop()
             for (int i = 0; i < SENSOR_COUNT; i++)
             {
                 int x = i * 8;
-                if (dist[i] < threshold)
-                    u8g2.drawBox(x, 24, 7, 8);
-                else
+                if (detect_flag && flag[i])
+                {
                     u8g2.drawFrame(x, 24, 7, 8);
+                    u8g2.drawBox(x + 2, 26, 3, 4);
+                }
+                else if (dist[i] < threshold)
+                {
+                    u8g2.drawBox(x, 24, 7, 8);
+                }
+                else
+                {
+                    u8g2.drawFrame(x, 24, 7, 8);
+                }
             }
 
-            u8g2.setCursor(72, 32);
+            u8g2.setCursor(75, 32);
             u8g2.print("B: ");
             u8g2.print(analogRead(BAT) * 0.00349f, 1);
             u8g2.print("V");
@@ -377,35 +409,39 @@ void loop()
             u8g2.setCursor(0, 10);
             u8g2.print("Speed control");
 
+            int yPositions[4] = {(selectedOpt < 2) ? 20 : 100,
+                                 (selectedOpt < 2) ? 30 : 100,
+                                 (selectedOpt < 2) ? 100 : 20,
+                                 (selectedOpt < 2) ? 100 : 30};
+
             if (selectedOpt == 0)
             {
                 if (selected)
                 {
-
                     u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, y1 - 8, 128, 10);
+                    u8g2.drawBox(0, yPositions[0] - 8, 128, 10);
                     u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, y1);
+                    u8g2.setCursor(0, yPositions[0]);
                     u8g2.print(">");
-                    u8g2.setCursor(8, y1);
+                    u8g2.setCursor(8, yPositions[0]);
                     u8g2.print("Speed: ");
-                    u8g2.print(speed);
+                    u8g2.print(speed, 0);
                     u8g2.setDrawColor(1);
                 }
                 else
                 {
-                    u8g2.setCursor(0, y1);
+                    u8g2.setCursor(0, yPositions[0]);
                     u8g2.print(">");
-                    u8g2.setCursor(8, y1);
+                    u8g2.setCursor(8, yPositions[0]);
                     u8g2.print("Speed: ");
-                    u8g2.print(speed);
+                    u8g2.print(speed, 0);
                 }
             }
             else
             {
-                u8g2.setCursor(8, y1);
+                u8g2.setCursor(8, yPositions[0]);
                 u8g2.print("Speed: ");
-                u8g2.print(speed);
+                u8g2.print(speed, 0);
             }
 
             if (selectedOpt == 1)
@@ -413,29 +449,89 @@ void loop()
                 if (selected)
                 {
                     u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, y2 - 8, 128, 10);
+                    u8g2.drawBox(0, yPositions[1] - 8, 128, 10);
                     u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, y2);
+                    u8g2.setCursor(0, yPositions[1]);
                     u8g2.print(">");
-                    u8g2.setCursor(8, y2);
-                    u8g2.print("MAX: ");
-                    u8g2.print(max_speed);
+                    u8g2.setCursor(8, yPositions[1]);
+                    u8g2.print("MAX:   ");
+                    u8g2.print(max_speed, 0);
                     u8g2.setDrawColor(1);
                 }
                 else
                 {
-                    u8g2.setCursor(0, y2);
+                    u8g2.setCursor(0, yPositions[1]);
                     u8g2.print(">");
-                    u8g2.setCursor(8, y2);
-                    u8g2.print("MAX: ");
-                    u8g2.print(max_speed);
+                    u8g2.setCursor(8, yPositions[1]);
+                    u8g2.print("MAX:   ");
+                    u8g2.print(max_speed, 0);
                 }
             }
             else
             {
-                u8g2.setCursor(8, y2);
-                u8g2.print("MAX: ");
-                u8g2.print(max_speed);
+                u8g2.setCursor(8, yPositions[1]);
+                u8g2.print("MAX:   ");
+                u8g2.print(max_speed, 0);
+            }
+
+            if (selectedOpt == 2)
+            {
+                if (selected)
+                {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, yPositions[2] - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, yPositions[2]);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, yPositions[2]);
+                    u8g2.print("Rot:   ");
+                    u8g2.print(rot_speed, 0);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, yPositions[2]);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, yPositions[2]);
+                    u8g2.print("Rot:   ");
+                    u8g2.print(rot_speed, 0);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, yPositions[2]);
+                u8g2.print("Rot:   ");
+                u8g2.print(rot_speed, 0);
+            }
+
+            if (selectedOpt == 3)
+            {
+                if (selected)
+                {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, yPositions[3] - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, yPositions[3]);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, yPositions[3]);
+                    u8g2.print("Ramp:  ");
+                    u8g2.print(ramp_up_step, 2);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, yPositions[3]);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, yPositions[3]);
+                    u8g2.print("Ramp:  ");
+                    u8g2.print(ramp_up_step, 2);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, yPositions[3]);
+                u8g2.print("Ramp:  ");
+                u8g2.print(ramp_up_step, 2);
             }
 
             break;

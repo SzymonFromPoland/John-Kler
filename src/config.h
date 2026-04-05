@@ -32,6 +32,14 @@
 const int threshold = 300;
 const int servo_midpoint = 95;
 
+struct Menu
+{
+    int id;
+    int optCount;
+};
+
+extern Menu menus[];
+
 extern float Kp;
 extern float Kd;
 extern float stepKp;
@@ -45,13 +53,15 @@ extern float targetYaw;
 extern float speedStep;
 extern float speed;
 extern float max_speed;
+extern float ramp_up_step;
+extern float rot_speed;
 
 extern bool started;
 extern bool doCalibrate;
 extern bool hold_led;
 extern bool move_servo;
 extern bool test_servo;
-
+extern bool detect_flag;
 
 extern int mode;
 extern int menu;

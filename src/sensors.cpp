@@ -48,9 +48,8 @@ void setup_sensors()
     // Serial.println("Sensors setup complete.");
 }
 
-void read_sensors(uint16_t *distances)
+void read_sensors(VL53L4CD_Result_t *results, bool ignore)
 {
-    VL53L4CD_Result_t results;
     uint8_t NewDataReady = 0;
 
     do
@@ -61,7 +60,8 @@ void read_sensors(uint16_t *distances)
     for (int i = 0; i < SENSOR_COUNT; i++)
     {
         sensors[i].VL53L4CD_ClearInterrupt();
-        sensors[i].VL53L4CD_GetResult(&results);
-        distances[i] = (results.range_status == 0) ? min(results.distance_mm, (uint16_t)threshold) : threshold;
+        sensors[i].VL53L4CD_GetResult(&results[i]);
+        if (!ignore)
+            results[i].distance_mm = (results[i].range_status == 0) ? min(results[i].distance_mm, (uint16_t)threshold) : threshold;
     }
 }
