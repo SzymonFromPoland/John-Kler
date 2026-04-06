@@ -73,5 +73,7 @@ extern int selectedOpt;
 
 extern float flag_threshold;
 extern float arch_angle;
+extern float arch_speed;
+extern float arch_time;
 
 #endif

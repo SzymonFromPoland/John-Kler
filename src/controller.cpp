@@ -51,9 +51,11 @@ void saveParams()
   prefs_global.putFloat("ramp_up_gain", ramp_up_step);
   prefs_global.putFloat("flag_threshold", flag_threshold);
   prefs_global.putFloat("sens_threshold", threshold);
-  prefs_global.putBool("detect_flag", detect_flag);
+  prefs_global.putFloat("detect_flag", (float)detect_flag);
   prefs_global.putFloat("arch_angle", arch_angle);
-  prefs_global.putInt("mode", mode);
+  prefs_global.putFloat("arch_speed", arch_speed);
+  prefs_global.putFloat("arch_time", arch_time);
+  prefs_global.putFloat("mode", (float)mode);
   prefs_global.end();
 }
 
@@ -70,9 +72,11 @@ void loadParams()
   ramp_up_step = prefs_global.getFloat("ramp_up_gain", 1.0f);
   flag_threshold = prefs_global.getFloat("flag_threshold", 500000.0f);
   threshold = prefs_global.getFloat("sens_threshold", 300.0f);
-  detect_flag = prefs_global.getBool("detect_flag", false);
+  detect_flag = (bool)prefs_global.getFloat("detect_flag", 0.0f);
   arch_angle = prefs_global.getFloat("arch_angle", 50.0f);
-  mode = prefs_global.getInt("mode", 1);
+  arch_speed = prefs_global.getFloat("arch_speed", 100.0f);
+  arch_time = prefs_global.getFloat("arch_time", 1000.0f);
+  mode = (int)prefs_global.getFloat("mode", 1.0f);
 
   prefs_global.end();
 }
@@ -252,8 +256,18 @@ void handleIR()
               {
                 if (selectedOpt == 0)
                 {
+                  arch_speed += 5.0f;
+                  arch_speed = constrain(arch_speed, 0.0f, 100.0f);
+                }
+                if (selectedOpt == 1)
+                {
                   arch_angle += 5.0f;
-                  arch_angle = constrain(arch_angle, 0.0f, 100.0f);
+                  arch_angle = constrain(arch_angle, 0.0f, arch_angle);
+                }
+                if (selectedOpt == 2)
+                {
+                  arch_time += 100.0f;
+                  arch_time = constrain(arch_time, 0.0f, 10000.0f);
                 }
               }
             }
@@ -337,8 +351,18 @@ void handleIR()
               {
                 if (selectedOpt == 0)
                 {
+                  arch_speed -= 5.0f;
+                  arch_speed = constrain(arch_speed, 0.0f, 100.0f);
+                }
+                if (selectedOpt == 1)
+                {
                   arch_angle -= 5.0f;
-                  arch_angle = constrain(arch_angle, 0.0f, 100.0f);
+                  arch_angle = constrain(arch_angle, 0.0f, arch_angle);
+                }
+                if (selectedOpt == 2)
+                {
+                  arch_time -= 100.0f;
+                  arch_time = constrain(arch_time, 0.0f, 10000.0f);
                 }
               }
             }

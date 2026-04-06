@@ -172,16 +172,18 @@ unsigned long readTime = 0;
 unsigned long targetTime = 0;
 unsigned long servoTime = 0;
 unsigned long lastDisplayUpdate = 0;
+unsigned long archTime = 0;
 const unsigned long SERVO_ROTATION_TIME = 180;
 const unsigned long DISPLAY_UPDATE_INTERVAL = 100;
 const unsigned long TARGET_ARROW_SHOW_TIME = 1000;
 
 float yaw_output = 0.0f;
+int arch_dir = -1;
 
 // [ ] - add tactics
 // [x] -    M1 tornado
 // [x] -    M2 kat i pizda (czujniki < 100)
-// [ ] -    M3 kat, pizda i (czujniki < threshold)
+// [x] -    M3 kat, pizda i (czujniki < threshold)
 // [ ] -    M4 łuk flagowys
 // [ ] -    M5 flaga i czeka
 // [ ] - tune drive pid
@@ -267,6 +269,11 @@ void loop()
         if (close_to_yaw || !started)
             read_sensors(results);
     }
+    else if (mode == 4 || dyn_mode == 4)
+    {
+        if (close_to_yaw || !started)
+            read_sensors(results);
+    }
 
     for (int i = 0; i < SENSOR_COUNT; i++)
     {
@@ -334,11 +341,24 @@ void loop()
             leftSpeed = (close_to_yaw ? rot_speed : 0) + yaw_output;
             rightSpeed = (close_to_yaw ? rot_speed : 0) - yaw_output;
         }
+        else if (mode == 4 || dyn_mode == 4)
+        {
+            move_servo = true;
+            leftSpeed = yaw_output;
+            rightSpeed = -yaw_output;
+            if (millis() - archTime < arch_time)
+            {
+                leftSpeed = arch_speed;
+                rightSpeed = arch_speed;
+            }
+        }
     }
     else
     {
         ramp_up1 = 0.0f;
         dyn_mode = mode;
+        arch_time = millis();
+        arch_dir = (targetYaw - yaw);
     }
 
     leftSpeed = constrain(leftSpeed, -max_speed, max_speed);
@@ -558,7 +578,6 @@ void loop()
 
             break;
         }
-
         case 3:
         {
             u8g2.setCursor(0, 10);
@@ -766,36 +785,101 @@ void loop()
         case 6:
         {
             u8g2.setCursor(0, 10);
-            u8g2.print("Config");
+            u8g2.print("Arch control");
+
+            int yPositions[4] = {(selectedOpt < 2) ? 20 : 100,
+                                 (selectedOpt < 2) ? 30 : 100,
+                                 (selectedOpt < 2) ? 100 : 20,
+                                 (selectedOpt < 2) ? 100 : 30};
 
             if (selectedOpt == 0)
             {
                 if (selected)
                 {
                     u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, y1 - 8, 128, 10);
+                    u8g2.drawBox(0, yPositions[0] - 8, 128, 10);
                     u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, y1);
+                    u8g2.setCursor(0, yPositions[0]);
                     u8g2.print(">");
-                    u8g2.setCursor(8, y1);
+                    u8g2.setCursor(8, yPositions[0]);
                     u8g2.print("Arch: ");
-                    u8g2.print(flag_threshold);
+                    u8g2.print(arch_speed, 1);
                     u8g2.setDrawColor(1);
                 }
                 else
                 {
-                    u8g2.setCursor(0, y1);
+                    u8g2.setCursor(0, yPositions[0]);
                     u8g2.print(">");
-                    u8g2.setCursor(8, y1);
-                    u8g2.print("Arch: ");
-                    u8g2.print(flag_threshold);
+                    u8g2.setCursor(8, yPositions[0]);
+                    u8g2.print("Speed: ");
+                    u8g2.print(arch_speed, 1);
                 }
             }
             else
             {
-                u8g2.setCursor(8, y1);
-                u8g2.print("Arch: ");
-                u8g2.print(flag_threshold);
+                u8g2.setCursor(8, yPositions[0]);
+                u8g2.print("Speed: ");
+                u8g2.print(arch_speed, 1);
+            }
+
+            if (selectedOpt == 1)
+            {
+                if (selected)
+                {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, yPositions[1] - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, yPositions[1]);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, yPositions[1]);
+                    u8g2.print("Angle: ");
+                    u8g2.print(arch_angle, 1);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, yPositions[1]);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, yPositions[1]);
+                    u8g2.print("Angle: ");
+                    u8g2.print(arch_angle, 1);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, yPositions[1]);
+                u8g2.print("Angle:   ");
+                u8g2.print(arch_angle, 1);
+            }
+
+            if (selectedOpt == 2)
+            {
+                if (selected)
+                {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, yPositions[2] - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, yPositions[2]);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, yPositions[2]);
+                    u8g2.print("Time: ");
+                    u8g2.print(arch_time, 1);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, yPositions[2]);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, yPositions[2]);
+                    u8g2.print("Time: ");
+                    u8g2.print(arch_time, 1);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, yPositions[2]);
+                u8g2.print("Time: ");
+                u8g2.print(arch_time, 1);
             }
 
             break;
