@@ -1,6 +1,6 @@
 #include "config.h"
 
-size_t menu_count = 4;
+int menu_count = 6;
 
 Menu menus[] = {
     {0, 0},
@@ -8,7 +8,9 @@ Menu menus[] = {
     {2, 4},
     {3, 2},
     {4, 2},
-};
+    {5, 2}};
+
+float threshold = 300.0f;
 
 float stepKp = 0.5f;
 float stepKd = 0.05f;
@@ -32,8 +34,12 @@ bool hold_led = false;
 bool doCalibrate = false;
 bool move_servo = false;
 bool test_servo = false;
-bool detect_flag = false;
-int mode = 1;
-int menu = 0;
+
 bool selected = false;
 int selectedOpt = 0;
+int mode = 1;
+int dyn_mode = 1;
+int menu = 0;
+
+bool detect_flag = false;
+float flag_threshold = 500000.0f;

@@ -181,10 +181,11 @@ float yaw_output = 0.0f;
 // [ ] - add tactics
 // [x] -    M1 tornado
 // [x] -    M2 kat i pizda
-// [ ] -    M3 łuk flagowys
-// [ ] -    M4 flaga i czeka
+// [ ] -    M3 kat, pizda i czujniki
+// [ ] -    M4 łuk flagowys
+// [ ] -    M5 flaga i czeka
 // [ ] - tune drive pid
-// [ ] - wykrywanie flagi
+// [x] - wykrywanie flagi
 // [x] - M2 w miejscu
 
 void handleServo()
@@ -244,20 +245,18 @@ void loop()
     float rate = (g.gyro.x - gxBias) * RAD_TO_DEG;
     yaw += rate * dt;
     yaw_output = pid(targetYaw - yaw, dt, yawKp, 0.0f, yawKd, yawPD, 0.75f);
-    reached_yaw = abs(targetYaw - yaw) <= 5.0f;
+    reached_yaw = (started) ? (abs(targetYaw - yaw) <= 5.0f && !reached_yaw) : 0;
     close_to_yaw = abs(targetYaw - yaw) <= 25.0f;
 
-    // if (mode == 1)
-    // {
-    //     read_sensors(dist);
-    // }
-    // else if (mode == 2)
-    // {
-    //     if (reached_yaw || !started)
-    //         read_sensors(dist);
-    // }
-
-    read_sensors(results);
+    if (mode == 1)
+    {
+        read_sensors(results);
+    }
+    else if (mode == 2)
+    {
+        if (reached_yaw || !started)
+            read_sensors(results);
+    }
 
     for (int i = 0; i < SENSOR_COUNT; i++)
     {
@@ -265,9 +264,10 @@ void loop()
         results[i].number_of_spad = (results[i].number_of_spad > 0) ? results[i].number_of_spad : 1;
         float index = ((float)results[i].signal_per_spad_kcps * ((float)dist[i] * (float)dist[i])) / (float)results[i].number_of_spad;
         // Serial.printf("%d\t", (int)index);
-        flag[i] = (index > 5000000);
+        flag[i] = (index > flag_threshold);
+        dist[i] = (detect_flag && flag[i]) ? threshold : dist[i];
     }
-    Serial.println();
+    // Serial.println();
 
     float error = calc_error(dist);
     float output = pid(error, dt, Kp, 0.0f, Kd, linePD);
@@ -277,22 +277,26 @@ void loop()
     else if (error < -0.1)
         last_dir = -1;
 
-    bool any_ut = false;
+    bool any_ut1 = false;
+    bool any_ut2 = false;
     for (uint16_t d : dist)
     {
         if (d < threshold)
         {
-            any_ut = true;
-            break;
+            any_ut1 = true;
+        }
+        if (d < 100)
+        {
+            any_ut2 = true;
         }
     }
 
     if (started)
     {
-        if (mode == 1)
+        if (mode == 1 || dyn_mode == 1)
         {
             move_servo = true;
-            if (any_ut)
+            if (any_ut1)
             {
                 if (dist[3] < threshold || dist[4] < threshold || dist[5] < threshold)
                     ramp_up1 = constrain(ramp_up1 + ramp_up_step, -max_speed, max_speed);
@@ -306,9 +310,17 @@ void loop()
                 rightSpeed = speed * -last_dir;
             }
         }
-        else if (mode == 2)
+        else if (mode == 2 || dyn_mode == 2)
         {
 
+            move_servo = true;
+            leftSpeed = (close_to_yaw ? rot_speed : 0) + yaw_output;
+            rightSpeed = (close_to_yaw ? rot_speed : 0) - yaw_output;
+        }
+        else if (mode == 3 || dyn_mode == 3)
+        {
+            if (any_ut2)
+                dyn_mode = 1;
             move_servo = true;
             leftSpeed = (close_to_yaw ? rot_speed : 0) + yaw_output;
             rightSpeed = (close_to_yaw ? rot_speed : 0) - yaw_output;
@@ -317,6 +329,7 @@ void loop()
     else
     {
         ramp_up1 = 0.0f;
+        dyn_mode = mode;
     }
 
     leftSpeed = constrain(leftSpeed, -max_speed, max_speed);
@@ -669,6 +682,74 @@ void loop()
                 u8g2.setCursor(8, y2);
                 u8g2.print("Kd: ");
                 u8g2.print(yawKd, 6);
+            }
+
+            break;
+        }
+        case 5:
+        {
+            u8g2.setCursor(0, 10);
+            u8g2.print("Thresholds");
+
+            if (selectedOpt == 0)
+            {
+                if (selected)
+                {
+
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, y1 - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, y1);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y1);
+                    u8g2.print("FDTh: ");
+                    u8g2.print(flag_threshold);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, y1);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y1);
+                    u8g2.print("FDTh: ");
+                    u8g2.print(flag_threshold);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, y1);
+                u8g2.print("FDTh: ");
+                u8g2.print(flag_threshold);
+            }
+
+            if (selectedOpt == 1)
+            {
+                if (selected)
+                {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, y2 - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, y2);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y2);
+                    u8g2.print("STh: ");
+                    u8g2.print(threshold);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, y2);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y2);
+                    u8g2.print("STh: ");
+                    u8g2.print(threshold);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, y2);
+                u8g2.print("STh: ");
+                u8g2.print(threshold);
             }
 
             break;

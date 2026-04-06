@@ -5,8 +5,6 @@
 #include <Preferences.h>
 #include <U8g2lib.h>
 
-#define MENU_COUNT 5
-
 extern Preferences prefs_global;
 extern U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2;
 

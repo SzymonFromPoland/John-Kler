@@ -29,7 +29,6 @@
 
 #define BAT 7
 
-const int threshold = 300;
 const int servo_midpoint = 95;
 
 struct Menu
@@ -39,6 +38,8 @@ struct Menu
 };
 
 extern Menu menus[];
+
+extern float threshold;
 
 extern float Kp;
 extern float Kd;
@@ -64,8 +65,12 @@ extern bool test_servo;
 extern bool detect_flag;
 
 extern int mode;
+extern int dyn_mode;
 extern int menu;
+extern int menu_count;
 extern bool selected;
 extern int selectedOpt;
+
+extern float flag_threshold;
 
 #endif

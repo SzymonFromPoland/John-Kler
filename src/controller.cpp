@@ -49,6 +49,8 @@ void saveParams()
   prefs_global.putFloat("max_speed", max_speed);
   prefs_global.putFloat("rot_speed", rot_speed);
   prefs_global.putFloat("ramp_up_gain", ramp_up_step);
+  prefs_global.putFloat("flag_threshold", flag_threshold);
+  prefs_global.putFloat("sens_threshold", threshold);
   prefs_global.end();
 }
 
@@ -63,6 +65,8 @@ void loadParams()
   max_speed = prefs_global.getFloat("max_speed", 50.0f);
   rot_speed = prefs_global.getFloat("rot_speed", 60.0f);
   ramp_up_step = prefs_global.getFloat("ramp_up_gain", 1.0f);
+  flag_threshold = prefs_global.getFloat("flag_threshold", 500000.0f);
+  threshold = prefs_global.getFloat("sens_threshold", 300.0f);
   prefs_global.end();
 }
 
@@ -174,6 +178,12 @@ void handleIR()
           {
             if (selected)
             {
+              if (menu == 1)
+              {
+                targetYaw += 5;
+                if (targetYaw > 180)
+                  targetYaw = -180;
+              }
               if (menu == 2)
               {
                 if (selectedOpt == 0)
@@ -227,19 +237,26 @@ void handleIR()
                   saveParams();
                 }
               }
-
-              if (menu == 1)
+              if (menu == 5)
               {
-                targetYaw += 5;
-                if (targetYaw > 180)
-                  targetYaw = -180;
+                if (selectedOpt == 0)
+                {
+                  flag_threshold += 10000;
+                  saveParams();
+                }
+                if (selectedOpt == 1)
+                {
+                  threshold += 10.0f;
+                  threshold = constrain(threshold, 0.0f, 1000.0f);
+                  saveParams();
+                }
               }
             }
             else if (!repeat)
             {
               selectedOpt = 0;
               menu++;
-              if (menu > MENU_COUNT - 1)
+              if (menu > menu_count - 1)
                 menu = 0;
             }
           }
@@ -248,6 +265,12 @@ void handleIR()
           {
             if (selected)
             {
+              if (menu == 1)
+              {
+                targetYaw -= 5;
+                if (targetYaw < -180)
+                  targetYaw = 180;
+              }
               if (menu == 2)
               {
                 if (selectedOpt == 0)
@@ -301,11 +324,19 @@ void handleIR()
                   saveParams();
                 }
               }
-              if (menu == 1)
+              if (menu == 5)
               {
-                targetYaw -= 5;
-                if (targetYaw < -180)
-                  targetYaw = 180;
+                if (selectedOpt == 0)
+                {
+                  flag_threshold -= 10000;
+                  saveParams();
+                }
+                if (selectedOpt == 1)
+                {
+                  threshold -= 10.0f;
+                  threshold = constrain(threshold, 0.0f, 1000.0f);
+                  saveParams();
+                }
               }
             }
             else if (!repeat)
@@ -313,7 +344,7 @@ void handleIR()
               selectedOpt = 0;
               menu--;
               if (menu < 0)
-                menu = MENU_COUNT - 1;
+                menu = menu_count - 1;
             }
           }
           else if (strcmp(m.name, "UP") == 0 && !repeat)
