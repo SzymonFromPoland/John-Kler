@@ -180,8 +180,8 @@ float yaw_output = 0.0f;
 
 // [ ] - add tactics
 // [x] -    M1 tornado
-// [x] -    M2 kat i pizda
-// [ ] -    M3 kat, pizda i czujniki
+// [x] -    M2 kat i pizda (czujniki < 100)
+// [ ] -    M3 kat, pizda i (czujniki < threshold)
 // [ ] -    M4 łuk flagowys
 // [ ] -    M5 flaga i czeka
 // [ ] - tune drive pid
@@ -248,13 +248,23 @@ void loop()
     reached_yaw = (started) ? (abs(targetYaw - yaw) <= 5.0f && !reached_yaw) : 0;
     close_to_yaw = abs(targetYaw - yaw) <= 25.0f;
 
-    if (mode == 1)
+    if (mode == 1 || dyn_mode == 1)
     {
         read_sensors(results);
     }
-    else if (mode == 2)
+    else if (mode == 2 || dyn_mode == 2)
     {
         if (reached_yaw || !started)
+            read_sensors(results);
+    }
+    else if (mode == 3 || dyn_mode == 3)
+    {
+        if (close_to_yaw || !started)
+            read_sensors(results);
+    }
+    else if (mode == 4 || dyn_mode == 4)
+    {
+        if (close_to_yaw || !started)
             read_sensors(results);
     }
 
@@ -263,11 +273,9 @@ void loop()
         dist[i] = results[i].distance_mm;
         results[i].number_of_spad = (results[i].number_of_spad > 0) ? results[i].number_of_spad : 1;
         float index = ((float)results[i].signal_per_spad_kcps * ((float)dist[i] * (float)dist[i])) / (float)results[i].number_of_spad;
-        // Serial.printf("%d\t", (int)index);
         flag[i] = (index > flag_threshold);
         dist[i] = (detect_flag && flag[i]) ? threshold : dist[i];
     }
-    // Serial.println();
 
     float error = calc_error(dist);
     float output = pid(error, dt, Kp, 0.0f, Kd, linePD);
@@ -312,7 +320,8 @@ void loop()
         }
         else if (mode == 2 || dyn_mode == 2)
         {
-
+            if (any_ut1)
+                dyn_mode = 1;
             move_servo = true;
             leftSpeed = (close_to_yaw ? rot_speed : 0) + yaw_output;
             rightSpeed = (close_to_yaw ? rot_speed : 0) - yaw_output;
@@ -750,6 +759,43 @@ void loop()
                 u8g2.setCursor(8, y2);
                 u8g2.print("STh: ");
                 u8g2.print(threshold);
+            }
+
+            break;
+        }
+        case 6:
+        {
+            u8g2.setCursor(0, 10);
+            u8g2.print("Config");
+
+            if (selectedOpt == 0)
+            {
+                if (selected)
+                {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, y1 - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                    u8g2.setCursor(0, y1);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y1);
+                    u8g2.print("Arch: ");
+                    u8g2.print(flag_threshold);
+                    u8g2.setDrawColor(1);
+                }
+                else
+                {
+                    u8g2.setCursor(0, y1);
+                    u8g2.print(">");
+                    u8g2.setCursor(8, y1);
+                    u8g2.print("Arch: ");
+                    u8g2.print(flag_threshold);
+                }
+            }
+            else
+            {
+                u8g2.setCursor(8, y1);
+                u8g2.print("Arch: ");
+                u8g2.print(flag_threshold);
             }
 
             break;

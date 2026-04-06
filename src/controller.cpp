@@ -51,6 +51,9 @@ void saveParams()
   prefs_global.putFloat("ramp_up_gain", ramp_up_step);
   prefs_global.putFloat("flag_threshold", flag_threshold);
   prefs_global.putFloat("sens_threshold", threshold);
+  prefs_global.putBool("detect_flag", detect_flag);
+  prefs_global.putFloat("arch_angle", arch_angle);
+  prefs_global.putInt("mode", mode);
   prefs_global.end();
 }
 
@@ -67,6 +70,10 @@ void loadParams()
   ramp_up_step = prefs_global.getFloat("ramp_up_gain", 1.0f);
   flag_threshold = prefs_global.getFloat("flag_threshold", 500000.0f);
   threshold = prefs_global.getFloat("sens_threshold", 300.0f);
+  detect_flag = prefs_global.getBool("detect_flag", false);
+  arch_angle = prefs_global.getFloat("arch_angle", 50.0f);
+  mode = prefs_global.getInt("mode", 1);
+
   prefs_global.end();
 }
 
@@ -190,25 +197,21 @@ void handleIR()
                 {
                   speed += speedStep;
                   speed = constrain(speed, 0, 100);
-                  saveParams();
                 }
                 if (selectedOpt == 1)
                 {
                   max_speed += speedStep;
                   max_speed = constrain(max_speed, 0, 100);
-                  saveParams();
                 }
                 if (selectedOpt == 2)
                 {
                   rot_speed += speedStep;
                   rot_speed = constrain(rot_speed, 0, 100);
-                  saveParams();
                 }
                 if (selectedOpt == 3)
                 {
                   ramp_up_step += 0.05;
                   ramp_up_step = constrain(ramp_up_step, 0, 100);
-                  saveParams();
                 }
               }
               if (menu == 3)
@@ -216,12 +219,10 @@ void handleIR()
                 if (selectedOpt == 0)
                 {
                   Kp += stepKp;
-                  saveParams();
                 }
                 if (selectedOpt == 1)
                 {
                   Kd += stepKd;
-                  saveParams();
                 }
               }
               if (menu == 4)
@@ -229,12 +230,10 @@ void handleIR()
                 if (selectedOpt == 0)
                 {
                   yawKp += yawStepKp;
-                  saveParams();
                 }
                 if (selectedOpt == 1)
                 {
                   yawKd += yawStepKd;
-                  saveParams();
                 }
               }
               if (menu == 5)
@@ -242,13 +241,19 @@ void handleIR()
                 if (selectedOpt == 0)
                 {
                   flag_threshold += 10000;
-                  saveParams();
                 }
                 if (selectedOpt == 1)
                 {
                   threshold += 10.0f;
                   threshold = constrain(threshold, 0.0f, 1000.0f);
-                  saveParams();
+                }
+              }
+              if (menu == 6)
+              {
+                if (selectedOpt == 0)
+                {
+                  arch_angle += 5.0f;
+                  arch_angle = constrain(arch_angle, 0.0f, 100.0f);
                 }
               }
             }
@@ -277,25 +282,21 @@ void handleIR()
                 {
                   speed -= speedStep;
                   speed = constrain(speed, 0, 100);
-                  saveParams();
                 }
                 if (selectedOpt == 1)
                 {
                   max_speed -= speedStep;
                   max_speed = constrain(max_speed, 0, 100);
-                  saveParams();
                 }
                 if (selectedOpt == 2)
                 {
                   rot_speed -= speedStep;
                   rot_speed = constrain(rot_speed, 0, 100);
-                  saveParams();
                 }
                 if (selectedOpt == 3)
                 {
                   ramp_up_step -= 0.05;
                   ramp_up_step = constrain(ramp_up_step, 0, 100);
-                  saveParams();
                 }
               }
               if (menu == 3)
@@ -303,12 +304,10 @@ void handleIR()
                 if (selectedOpt == 0)
                 {
                   Kp -= stepKp;
-                  saveParams();
                 }
                 if (selectedOpt == 1)
                 {
                   Kd -= stepKd;
-                  saveParams();
                 }
               }
               if (menu == 4)
@@ -316,12 +315,10 @@ void handleIR()
                 if (selectedOpt == 0)
                 {
                   yawKp -= yawStepKp;
-                  saveParams();
                 }
                 if (selectedOpt == 1)
                 {
                   yawKd -= yawStepKd;
-                  saveParams();
                 }
               }
               if (menu == 5)
@@ -329,13 +326,19 @@ void handleIR()
                 if (selectedOpt == 0)
                 {
                   flag_threshold -= 10000;
-                  saveParams();
                 }
                 if (selectedOpt == 1)
                 {
                   threshold -= 10.0f;
                   threshold = constrain(threshold, 0.0f, 1000.0f);
-                  saveParams();
+                }
+              }
+              if (menu == 6)
+              {
+                if (selectedOpt == 0)
+                {
+                  arch_angle -= 5.0f;
+                  arch_angle = constrain(arch_angle, 0.0f, 100.0f);
                 }
               }
             }
@@ -401,6 +404,7 @@ void handleIR()
               mode = 5;
           }
         }
+        saveParams();
         break;
       }
     }

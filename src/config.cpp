@@ -8,7 +8,8 @@ Menu menus[] = {
     {2, 4},
     {3, 2},
     {4, 2},
-    {5, 2}};
+    {5, 2},
+    {6, 1}};
 
 float threshold = 300.0f;
 
@@ -43,3 +44,4 @@ int menu = 0;
 
 bool detect_flag = false;
 float flag_threshold = 500000.0f;
+float arch_angle = 50.0f;

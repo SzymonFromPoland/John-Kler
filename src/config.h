@@ -72,5 +72,6 @@ extern bool selected;
 extern int selectedOpt;
 
 extern float flag_threshold;
+extern float arch_angle;
 
 #endif
