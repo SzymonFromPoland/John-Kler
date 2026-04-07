@@ -134,19 +134,22 @@ void setup()
         delay(750);
     }
 
-    for (int i = 0; i < 5; i++)
+    if (play_intro)
     {
-        for (int j = 0; j < 4; j++)
+        for (int i = 0; i < 5; i++)
         {
-            u8g2.clearBuffer();
+            for (int j = 0; j < 4; j++)
+            {
+                u8g2.clearBuffer();
 
-            u8g2.drawBitmap(
-                0, 0,
-                16, 31,
-                epd_bitmap_allArray[j]);
+                u8g2.drawBitmap(
+                    0, 0,
+                    16, 31,
+                    epd_bitmap_allArray[j]);
 
-            u8g2.sendBuffer();
-            delay(100);
+                u8g2.sendBuffer();
+                delay(100);
+            }
         }
     }
 }
@@ -205,9 +208,12 @@ unsigned long servoTime = 0;
 unsigned long lastDisplayUpdate = 0;
 unsigned long archTime = 0;
 unsigned long attackTime = 0;
+unsigned long slowDownTime = 0;
+
 const unsigned long SERVO_ROTATION_TIME = 180;
 const unsigned long DISPLAY_UPDATE_INTERVAL = 100;
 const unsigned long TARGET_ARROW_SHOW_TIME = 1000;
+const unsigned long SLOW_DOWN_TIME = 1000;
 unsigned long ATTACK_MISSED_TIME = 0;
 
 // TODO - add tactics
@@ -217,7 +223,7 @@ unsigned long ATTACK_MISSED_TIME = 0;
 // [x] -    M4 łuk flagowys
 // [x] -    M5 powolny podjazd
 // [ ] -    M6 flaga i czeka
-// [ ] - spowalnianie na blisko
+// [x] - spowalnianie na blisko
 // [ ] - tune drive pid
 // [x] - wykrywanie flagi
 
@@ -348,6 +354,8 @@ void loop()
 
     bool any_ut1 = false;
     bool any_ut2 = false;
+    bool any_ut3 = false;
+    bool speed_up = false;
     for (uint16_t d : dist)
     {
         if (d < threshold)
@@ -358,7 +366,16 @@ void loop()
         {
             any_ut2 = true;
         }
+        if (slow_down && d < slow_threshold)
+        {
+            any_ut3 = true;
+        }
     }
+
+    if (!any_ut3)
+        slowDownTime = millis();
+
+    speed_up = millis() - slowDownTime > SLOW_DOWN_TIME;
 
     if (!reached_yaw)
         archTime = millis();
@@ -373,10 +390,13 @@ void loop()
         {
             if (any_ut1)
             {
+
                 if (dist[3] < threshold || dist[4] < threshold || dist[5] < threshold)
                     ramp_up1 = constrain(ramp_up1 + ramp_up_step, -max_speed, max_speed);
-                leftSpeed = (speed + ramp_up1) + output;
-                rightSpeed = (speed + ramp_up1) - output;
+                if (slow_down && any_ut3 && !speed_up)
+                    ramp_up1 = 0.0f;
+                leftSpeed = ((slow_down && any_ut3 && !speed_up) ? slow_speed : (speed + ramp_up1)) + output;
+                rightSpeed = ((slow_down && any_ut3 && !speed_up) ? slow_speed : (speed + ramp_up1)) - output;
             }
             else
             {
@@ -461,18 +481,46 @@ void loop()
             lastFlipped = screen_flipped;
         }
 
+        Menu &m = menus[menu];
         u8g2.clearBuffer();
         u8g2.setFont(u8g2_font_6x10_tf);
         u8g2.setDrawColor(1);
 
-        int y1 = 20;
-        int y2 = 30;
+        // Adaptive Helper: Handles paging, highlighting, and labels automatically
+        auto drawOption = [&](int index, const char *label, float value, int precision, bool isBool = false)
+        {
+            int page = selectedOpt / 2;
+            int itemPage = index / 2;
+            if (page != itemPage)
+                return;
 
-        Menu &m = menus[menu];
+            int y = 20 + (index % 2) * 10;
+
+            if (selectedOpt == index)
+            {
+                if (selected)
+                {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, y - 8, 128, 10);
+                    u8g2.setDrawColor(0);
+                }
+                u8g2.setCursor(0, y);
+                u8g2.print(">");
+                u8g2.setDrawColor(selected ? 0 : 1);
+            }
+
+            u8g2.setCursor(8, y);
+            u8g2.print(label);
+            if (isBool)
+                u8g2.print(value > 0 ? "true" : "false");
+            else
+                u8g2.print(value, precision);
+            u8g2.setDrawColor(1);
+        };
+
         switch (m.id)
         {
         case 0:
-        {
             u8g2.setCursor(0, 10);
             u8g2.print(started ? "ON " : "OFF");
             u8g2.print(" M");
@@ -491,41 +539,34 @@ void loop()
             for (int i = 0; i < SENSOR_COUNT; i++)
             {
                 int x = i * 8;
-                if (detect_flag && flag[screen_flipped ? SENSOR_COUNT - (i + 1) : i])
+                int idx = screen_flipped ? SENSOR_COUNT - (i + 1) : i;
+                if (detect_flag && flag[idx])
                 {
                     u8g2.drawFrame(x, 24, 7, 8);
                     u8g2.drawBox(x + 2, 26, 3, 4);
                 }
-                else if (dist[screen_flipped ? SENSOR_COUNT - (i + 1) : i] < threshold)
-                {
+                else if (dist[idx] < threshold)
                     u8g2.drawBox(x, 24, 7, 8);
-                }
                 else
-                {
                     u8g2.drawFrame(x, 24, 7, 8);
-                }
             }
-
             u8g2.setCursor(75, 32);
             u8g2.print("B: ");
             u8g2.print(analogRead(BAT) * 0.00349f, 1);
             u8g2.print("V");
-
             break;
-        }
+
         case 1:
-        {
             u8g2.setCursor(1, 10);
             if (selected)
             {
-                u8g2.setDrawColor(1);
                 u8g2.drawBox(0, 2, 60, 10);
                 u8g2.setDrawColor(0);
             }
             u8g2.print("TY: ");
             u8g2.print(targetYaw, 1);
-            u8g2.setCursor(1, 20);
             u8g2.setDrawColor(1);
+            u8g2.setCursor(1, 20);
             u8g2.print("DY: ");
             u8g2.print(yaw_diff, 1);
             u8g2.setCursor(1, 30);
@@ -534,449 +575,55 @@ void loop()
             u8g2.drawCircle(80, 16, 15);
             u8g2.drawLine(80, 16, 80 + (int)(14 * sin((180 * screen_flipped + yaw_diff) * DEG_TO_RAD)), 16 - (int)(14 * cos((180 * screen_flipped + yaw_diff) * DEG_TO_RAD)));
             break;
-        }
+
         case 2:
-        {
             u8g2.setCursor(0, 10);
-            u8g2.print("Speed control");
-
-            int yPositions[4] = {(selectedOpt < 2) ? 20 : 100,
-                                 (selectedOpt < 2) ? 30 : 100,
-                                 (selectedOpt < 2) ? 100 : 20,
-                                 (selectedOpt < 2) ? 100 : 30};
-
-            if (selectedOpt == 0)
-            {
-                if (selected)
-                {
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, yPositions[0] - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, yPositions[0]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[0]);
-                    u8g2.print("Speed: ");
-                    u8g2.print(speed, 0);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, yPositions[0]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[0]);
-                    u8g2.print("Speed: ");
-                    u8g2.print(speed, 0);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, yPositions[0]);
-                u8g2.print("Speed: ");
-                u8g2.print(speed, 0);
-            }
-
-            if (selectedOpt == 1)
-            {
-                if (selected)
-                {
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, yPositions[1] - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, yPositions[1]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[1]);
-                    u8g2.print("MAX:   ");
-                    u8g2.print(max_speed, 0);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, yPositions[1]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[1]);
-                    u8g2.print("MAX:   ");
-                    u8g2.print(max_speed, 0);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, yPositions[1]);
-                u8g2.print("MAX:   ");
-                u8g2.print(max_speed, 0);
-            }
-
-            if (selectedOpt == 2)
-            {
-                if (selected)
-                {
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, yPositions[2] - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, yPositions[2]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[2]);
-                    u8g2.print("Rot:   ");
-                    u8g2.print(rot_speed, 0);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, yPositions[2]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[2]);
-                    u8g2.print("Rot:   ");
-                    u8g2.print(rot_speed, 0);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, yPositions[2]);
-                u8g2.print("Rot:   ");
-                u8g2.print(rot_speed, 0);
-            }
-
-            if (selectedOpt == 3)
-            {
-                if (selected)
-                {
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, yPositions[3] - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, yPositions[3]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[3]);
-                    u8g2.print("Ramp:  ");
-                    u8g2.print(ramp_up_step, 2);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, yPositions[3]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[3]);
-                    u8g2.print("Ramp:  ");
-                    u8g2.print(ramp_up_step, 2);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, yPositions[3]);
-                u8g2.print("Ramp:  ");
-                u8g2.print(ramp_up_step, 2);
-            }
-
+            u8g2.print("Speed Control");
+            drawOption(0, "Speed: ", speed, 0);
+            drawOption(1, "MAX:   ", max_speed, 0);
+            drawOption(2, "Rot:   ", rot_speed, 0);
+            drawOption(3, "Ramp:  ", ramp_up_step, 2);
+            drawOption(4, "Slow:  ", slow_speed, 0);
             break;
-        }
+
         case 3:
-        {
             u8g2.setCursor(0, 10);
             u8g2.print("Drive PD");
-
-            if (selectedOpt == 0)
-            {
-                if (selected)
-                {
-
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, y1 - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, y1);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y1);
-                    u8g2.print("Kp: ");
-                    u8g2.print(Kp);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, y1);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y1);
-                    u8g2.print("Kp: ");
-                    u8g2.print(Kp);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, y1);
-                u8g2.print("Kp: ");
-                u8g2.print(Kp);
-            }
-
-            if (selectedOpt == 1)
-            {
-                if (selected)
-                {
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, y2 - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, y2);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y2);
-                    u8g2.print("Kd: ");
-                    u8g2.print(Kd);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, y2);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y2);
-                    u8g2.print("Kd: ");
-                    u8g2.print(Kd);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, y2);
-                u8g2.print("Kd: ");
-                u8g2.print(Kd);
-            }
-
+            drawOption(0, "Kp: ", Kp, 4);
+            drawOption(1, "Kd: ", Kd, 4);
             break;
-        }
+
         case 4:
-        {
             u8g2.setCursor(0, 10);
             u8g2.print("Gyro PD");
-
-            if (selectedOpt == 0)
-            {
-                if (selected)
-                {
-
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, y1 - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, y1);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y1);
-                    u8g2.print("Kp: ");
-                    u8g2.print(yawKp, 6);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, y1);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y1);
-                    u8g2.print("Kp: ");
-                    u8g2.print(yawKp, 6);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, y1);
-                u8g2.print("Kp: ");
-                u8g2.print(yawKp, 6);
-            }
-
-            if (selectedOpt == 1)
-            {
-                if (selected)
-                {
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, y2 - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, y2);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y2);
-                    u8g2.print("Kd: ");
-                    u8g2.print(yawKd, 6);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, y2);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y2);
-                    u8g2.print("Kd: ");
-                    u8g2.print(yawKd, 6);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, y2);
-                u8g2.print("Kd: ");
-                u8g2.print(yawKd, 6);
-            }
-
+            drawOption(0, "Kp: ", yawKp, 6);
+            drawOption(1, "Kd: ", yawKd, 6);
             break;
-        }
+
         case 5:
-        {
             u8g2.setCursor(0, 10);
             u8g2.print("Thresholds");
-
-            if (selectedOpt == 0)
-            {
-                if (selected)
-                {
-
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, y1 - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, y1);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y1);
-                    u8g2.print("FDTh: ");
-                    u8g2.print(flag_threshold);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, y1);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y1);
-                    u8g2.print("FDTh: ");
-                    u8g2.print(flag_threshold);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, y1);
-                u8g2.print("FDTh: ");
-                u8g2.print(flag_threshold);
-            }
-
-            if (selectedOpt == 1)
-            {
-                if (selected)
-                {
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, y2 - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, y2);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y2);
-                    u8g2.print("STh: ");
-                    u8g2.print(threshold);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, y2);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, y2);
-                    u8g2.print("STh: ");
-                    u8g2.print(threshold);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, y2);
-                u8g2.print("STh: ");
-                u8g2.print(threshold);
-            }
-
+            drawOption(0, "FDTh: ", flag_threshold, 0);
+            drawOption(1, "STh:  ", threshold, 0);
+            drawOption(2, "SDTh: ", slow_threshold, 0);
             break;
-        }
+
         case 6:
-        {
             u8g2.setCursor(0, 10);
-            u8g2.print("Arch control");
+            u8g2.print("Arch Control");
+            drawOption(0, "Speed: ", arch_speed, 1);
+            drawOption(1, "Angle: ", arch_angle, 1);
+            drawOption(2, "Time:  ", arch_time, 0);
+            break;
 
-            int yPositions[4] = {(selectedOpt < 2) ? 20 : 100,
-                                 (selectedOpt < 2) ? 30 : 100,
-                                 (selectedOpt < 2) ? 100 : 20,
-                                 (selectedOpt < 2) ? 100 : 30};
-
-            if (selectedOpt == 0)
-            {
-                if (selected)
-                {
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, yPositions[0] - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, yPositions[0]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[0]);
-                    u8g2.print("Speed: ");
-                    u8g2.print(arch_speed, 1);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, yPositions[0]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[0]);
-                    u8g2.print("Speed: ");
-                    u8g2.print(arch_speed, 1);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, yPositions[0]);
-                u8g2.print("Speed: ");
-                u8g2.print(arch_speed, 1);
-            }
-
-            if (selectedOpt == 1)
-            {
-                if (selected)
-                {
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, yPositions[1] - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, yPositions[1]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[1]);
-                    u8g2.print("Angle: ");
-                    u8g2.print(arch_angle, 1);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, yPositions[1]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[1]);
-                    u8g2.print("Angle: ");
-                    u8g2.print(arch_angle, 1);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, yPositions[1]);
-                u8g2.print("Angle: ");
-                u8g2.print(arch_angle, 1);
-            }
-
-            if (selectedOpt == 2)
-            {
-                if (selected)
-                {
-                    u8g2.setDrawColor(1);
-                    u8g2.drawBox(0, yPositions[2] - 8, 128, 10);
-                    u8g2.setDrawColor(0);
-                    u8g2.setCursor(0, yPositions[2]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[2]);
-                    u8g2.print("Time: ");
-                    u8g2.print(arch_time, 1);
-                    u8g2.setDrawColor(1);
-                }
-                else
-                {
-                    u8g2.setCursor(0, yPositions[2]);
-                    u8g2.print(">");
-                    u8g2.setCursor(8, yPositions[2]);
-                    u8g2.print("Time: ");
-                    u8g2.print(arch_time, 1);
-                }
-            }
-            else
-            {
-                u8g2.setCursor(8, yPositions[2]);
-                u8g2.print("Time: ");
-                u8g2.print(arch_time, 1);
-            }
-
+        case 7:
+            u8g2.setCursor(0, 10);
+            u8g2.print("Extra Settings");
+            drawOption(0, "Slow:  ", slow_down, 0, true);
+            drawOption(1, "Intro: ", play_intro, 0, true);
             break;
         }
-        }
-
         u8g2.sendBuffer();
     }
-
     readTime = millis() - readStart;
 }

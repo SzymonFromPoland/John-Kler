@@ -2,18 +2,23 @@
 
 bool screen_flipped = false;
 
-int menu_count = 7;
+bool slow_down = false;
+bool play_intro = false;
+
+int menu_count = 8;
 
 Menu menus[] = {
     {0, 0},
     {1, 1},
-    {2, 4},
+    {2, 5},
     {3, 2},
     {4, 2},
-    {5, 2},
-    {6, 3}};
+    {5, 3},
+    {6, 3},
+    {7, 2}};
 
 float threshold = 300.0f;
+float slow_threshold = 300.0f;
 
 float stepKp = 0.5f;
 float stepKd = 0.05f;
@@ -31,6 +36,7 @@ float ramp_up_step = 0.5f;
 float speed = 50.0f;
 float max_speed = 50.0f;
 float rot_speed = 50.0f;
+float slow_speed = 15.0f;
 
 bool started = false;
 bool hold_led = false;

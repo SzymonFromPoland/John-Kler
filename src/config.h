@@ -41,7 +41,11 @@ extern Menu menus[];
 
 extern bool screen_flipped;
 
+extern bool slow_down;
+extern bool play_intro;
+
 extern float threshold;
+extern float slow_threshold;
 
 extern float Kp;
 extern float Kd;
@@ -58,6 +62,7 @@ extern float speed;
 extern float max_speed;
 extern float ramp_up_step;
 extern float rot_speed;
+extern float slow_speed;
 
 extern bool started;
 extern bool doCalibrate;
@@ -77,6 +82,5 @@ extern float flag_threshold;
 extern float arch_angle;
 extern float arch_speed;
 extern float arch_time;
-
 
 #endif

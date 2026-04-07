@@ -57,6 +57,10 @@ void saveParams()
   prefs_global.putFloat("arch_time", arch_time);
   prefs_global.putFloat("mode", (float)mode);
   prefs_global.putFloat("screen_flipped", (float)screen_flipped);
+  prefs_global.putFloat("slow_down", (float)slow_down);
+  prefs_global.putFloat("play_intro", (float)play_intro);
+  prefs_global.putFloat("slow_threshold", slow_threshold);
+  prefs_global.putFloat("slow_speed", slow_speed);
   prefs_global.end();
 }
 
@@ -79,7 +83,10 @@ void loadParams()
   arch_time = prefs_global.getFloat("arch_time", 1000.0f);
   mode = (int)prefs_global.getFloat("mode", 1.0f);
   screen_flipped = (bool)prefs_global.getFloat("screen_flipped", 0.0f);
-
+  slow_down = (bool)prefs_global.getFloat("slow_down", 0.0f);
+  play_intro = (bool)prefs_global.getFloat("play_intro", 0.0f);
+  slow_threshold = prefs_global.getFloat("slow_threshold", 100.0f);
+  slow_speed = prefs_global.getFloat("slow_speed", 30.0f);
   prefs_global.end();
 }
 
@@ -137,9 +144,7 @@ void handleIR()
 
   case NEC:
   {
-
     bool repeat = irResults.repeat;
-
     static uint8_t lastAddress = 0xFF;
     static uint8_t lastCommand = 0xFF;
 
@@ -160,7 +165,6 @@ void handleIR()
     {
       if (m.code == command)
       {
-
         if (strcmp(m.name, "E") == 0)
         {
           started = true;
@@ -223,6 +227,11 @@ void handleIR()
                   ramp_up_step += 0.05;
                   ramp_up_step = constrain(ramp_up_step, 0, 100);
                 }
+                if (selectedOpt == 4)
+                {
+                  slow_speed += 1.0f;
+                  slow_speed = constrain(slow_speed, 0, 100);
+                }
               }
               if (menu == 3)
               {
@@ -257,6 +266,11 @@ void handleIR()
                   threshold += 10.0f;
                   threshold = constrain(threshold, 0.0f, 1000.0f);
                 }
+                if (selectedOpt == 2)
+                {
+                  slow_threshold += 5.0f;
+                  slow_threshold = constrain(slow_threshold, 0.0f, 1000.0f);
+                }
               }
               if (menu == 6)
               {
@@ -276,6 +290,17 @@ void handleIR()
                   arch_time = constrain(arch_time, 0.0f, 10000.0f);
                 }
               }
+              if (menu == 7)
+              {
+                if (selectedOpt == 0 && !repeat)
+                {
+                  slow_down = !slow_down;
+                }
+                if (selectedOpt == 1 && !repeat)
+                {
+                  play_intro = !play_intro;
+                }
+              }
             }
             else if (!repeat)
             {
@@ -285,7 +310,6 @@ void handleIR()
                 menu = 0;
             }
           }
-
           else if (strcmp(m.name, "LEFT") == 0)
           {
             if (selected)
@@ -317,6 +341,11 @@ void handleIR()
                 {
                   ramp_up_step -= 0.05;
                   ramp_up_step = constrain(ramp_up_step, 0, 100);
+                }
+                if (selectedOpt == 4)
+                {
+                  slow_speed -= 1.0f;
+                  slow_speed = constrain(slow_speed, 0, 100);
                 }
               }
               if (menu == 3)
@@ -352,6 +381,11 @@ void handleIR()
                   threshold -= 10.0f;
                   threshold = constrain(threshold, 0.0f, 1000.0f);
                 }
+                if (selectedOpt == 2)
+                {
+                  slow_threshold -= 5.0f;
+                  slow_threshold = constrain(slow_threshold, 0.0f, 1000.0f);
+                }
               }
               if (menu == 6)
               {
@@ -369,6 +403,17 @@ void handleIR()
                 {
                   arch_time -= 100.0f;
                   arch_time = constrain(arch_time, 0.0f, 10000.0f);
+                }
+              }
+              if (menu == 7)
+              {
+                if (selectedOpt == 0 && !repeat)
+                {
+                  slow_down = !slow_down;
+                }
+                if (selectedOpt == 1 && !repeat)
+                {
+                  play_intro = !play_intro;
                 }
               }
             }
@@ -458,14 +503,11 @@ void handleIR()
         break;
       }
     }
-
     break;
   }
-
   default:
     break;
   }
-
   prefs_global.end();
   irrecv.resume();
 }
