@@ -56,6 +56,7 @@ void saveParams()
   prefs_global.putFloat("arch_speed", arch_speed);
   prefs_global.putFloat("arch_time", arch_time);
   prefs_global.putFloat("mode", (float)mode);
+  prefs_global.putFloat("screen_flipped", (float)screen_flipped);
   prefs_global.end();
 }
 
@@ -77,6 +78,7 @@ void loadParams()
   arch_speed = prefs_global.getFloat("arch_speed", 100.0f);
   arch_time = prefs_global.getFloat("arch_time", 1000.0f);
   mode = (int)prefs_global.getFloat("mode", 1.0f);
+  screen_flipped = (bool)prefs_global.getFloat("screen_flipped", 0.0f);
 
   prefs_global.end();
 }
@@ -174,9 +176,13 @@ void handleIR()
           {
             doCalibrate = true;
           }
-          if (strcmp(m.name, "A") == 0 && !repeat)
+          else if (strcmp(m.name, "A") == 0 && !repeat)
           {
             detect_flag = !detect_flag;
+          }
+          else if (strcmp(m.name, "B") == 0 && !repeat)
+          {
+            screen_flipped = !screen_flipped;
           }
           else if (strcmp(m.name, "OK") == 0 && !repeat)
           {
@@ -256,12 +262,12 @@ void handleIR()
               {
                 if (selectedOpt == 0)
                 {
-                  arch_speed += 5.0f;
+                  arch_speed += 1.0f;
                   arch_speed = constrain(arch_speed, 0.0f, 100.0f);
                 }
                 if (selectedOpt == 1)
                 {
-                  arch_angle += 5.0f;
+                  arch_angle += 1.0f;
                   arch_angle = constrain(arch_angle, 0.0f, arch_angle);
                 }
                 if (selectedOpt == 2)
@@ -351,12 +357,12 @@ void handleIR()
               {
                 if (selectedOpt == 0)
                 {
-                  arch_speed -= 5.0f;
+                  arch_speed -= 1.0f;
                   arch_speed = constrain(arch_speed, 0.0f, 100.0f);
                 }
                 if (selectedOpt == 1)
                 {
-                  arch_angle -= 5.0f;
+                  arch_angle -= 1.0f;
                   arch_angle = constrain(arch_angle, 0.0f, arch_angle);
                 }
                 if (selectedOpt == 2)
@@ -426,6 +432,26 @@ void handleIR()
               targetYaw = 180;
             if (menu == 0)
               mode = 5;
+          }
+          else if (strcmp(m.name, "6") == 0 && !repeat)
+          {
+            if (menu == 0)
+              mode = 6;
+          }
+          else if (strcmp(m.name, "7") == 0 && !repeat)
+          {
+            if (menu == 0)
+              mode = 7;
+          }
+          else if (strcmp(m.name, "8") == 0 && !repeat)
+          {
+            if (menu == 0)
+              mode = 8;
+          }
+          else if (strcmp(m.name, "9") == 0 && !repeat)
+          {
+            if (menu == 0)
+              mode = 9;
           }
         }
         saveParams();

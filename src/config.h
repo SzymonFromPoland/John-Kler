@@ -39,6 +39,8 @@ struct Menu
 
 extern Menu menus[];
 
+extern bool screen_flipped;
+
 extern float threshold;
 
 extern float Kp;
@@ -75,5 +77,6 @@ extern float flag_threshold;
 extern float arch_angle;
 extern float arch_speed;
 extern float arch_time;
+
 
 #endif

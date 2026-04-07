@@ -1,5 +1,7 @@
 #include "config.h"
 
+bool screen_flipped = false;
+
 int menu_count = 7;
 
 Menu menus[] = {

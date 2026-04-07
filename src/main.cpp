@@ -13,6 +13,7 @@
 #include <motors.h>
 #include <sensors.h>
 #include <controller.h>
+#include <intro.h>
 
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 Preferences prefs_global;
@@ -74,6 +75,19 @@ void calibrateGyro()
     delay(1000);
 }
 
+float estimateTime(float distance_m, float speed_percent, float k = 1.0f)
+{
+    const float wheel_diameter = 0.034f;
+    const float rpm_max = 1200.0f;
+
+    float v = (speed_percent / 100.0f) * (rpm_max / 60.0f) * PI * wheel_diameter * k;
+
+    if (v < 0.01f)
+        return 9999.0f;
+
+    return distance_m / v;
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -118,6 +132,22 @@ void setup()
 
         u8g2.sendBuffer();
         delay(750);
+    }
+
+    for (int i = 0; i < 5; i++)
+    {
+        for (int j = 0; j < 4; j++)
+        {
+            u8g2.clearBuffer();
+
+            u8g2.drawBitmap(
+                0, 0,
+                16, 31,
+                epd_bitmap_allArray[j]);
+
+            u8g2.sendBuffer();
+            delay(100);
+        }
     }
 }
 
@@ -170,25 +200,26 @@ float dt = 0;
 unsigned long lastTime = 0;
 unsigned long readTime = 0;
 unsigned long targetTime = 0;
+unsigned long reachedYawTime = 0;
 unsigned long servoTime = 0;
 unsigned long lastDisplayUpdate = 0;
 unsigned long archTime = 0;
+unsigned long attackTime = 0;
 const unsigned long SERVO_ROTATION_TIME = 180;
 const unsigned long DISPLAY_UPDATE_INTERVAL = 100;
 const unsigned long TARGET_ARROW_SHOW_TIME = 1000;
+unsigned long ATTACK_MISSED_TIME = 0;
 
-float yaw_output = 0.0f;
-int arch_dir = -1;
-
-// [ ] - add tactics
+// TODO - add tactics
 // [x] -    M1 tornado
 // [x] -    M2 kat i pizda (czujniki < 100)
 // [x] -    M3 kat, pizda i (czujniki < threshold)
-// [ ] -    M4 łuk flagowys
-// [ ] -    M5 flaga i czeka
+// [x] -    M4 łuk flagowys
+// [x] -    M5 powolny podjazd
+// [ ] -    M6 flaga i czeka
+// [ ] - spowalnianie na blisko
 // [ ] - tune drive pid
 // [x] - wykrywanie flagi
-// [x] - M2 w miejscu
 
 void handleServo()
 {
@@ -222,6 +253,8 @@ void handleServo()
     }
 }
 
+float yaw_output = 0.0f;
+int arch_dir = -1;
 float leftSpeed;
 float rightSpeed;
 float ramp_up1;
@@ -246,9 +279,22 @@ void loop()
     mpu.getEvent(&a, &g, &temp);
     float rate = (g.gyro.x - gxBias) * RAD_TO_DEG;
     yaw += rate * dt;
-    yaw_output = pid(targetYaw - yaw, dt, yawKp, 0.0f, yawKd, yawPD, 0.75f);
-    reached_yaw = (started) ? (abs(targetYaw - yaw) <= 5.0f && !reached_yaw) : 0;
-    close_to_yaw = abs(targetYaw - yaw) <= 25.0f;
+
+    yaw = fmod(yaw + 360.0f, 360.0f);
+    float yaw_diff = targetYaw - yaw;
+    yaw_diff = fmod(yaw_diff + 540.0f, 360.0f) - 180.0f;
+
+    yaw_output = pid(yaw_diff, dt, yawKp, 0.0f, yawKd, yawPD, 0.75f);
+
+    if (abs(yaw_diff) <= 5.0f && !reached_yaw)
+        reachedYawTime = reachedYawTime;
+    else
+        reachedYawTime = millis();
+
+    if (millis() - reachedYawTime >= 90)
+        reached_yaw = true;
+
+    close_to_yaw = abs(yaw_diff) <= 25.0f;
 
     if (mode == 1 || dyn_mode == 1)
     {
@@ -269,9 +315,14 @@ void loop()
         if (close_to_yaw || !started)
             read_sensors(results);
     }
-    else if (mode == 4 || dyn_mode == 4)
+    else if (mode == 5 || dyn_mode == 5)
     {
-        if (close_to_yaw || !started)
+        if (reached_yaw || !started)
+            read_sensors(results);
+    }
+    else if (mode == 6 || dyn_mode == 6)
+    {
+        if (reached_yaw || !started)
             read_sensors(results);
     }
 
@@ -285,7 +336,10 @@ void loop()
     }
 
     float error = calc_error(dist);
-    float output = pid(error, dt, Kp, 0.0f, Kd, linePD);
+    float alpha = 1.0f;
+    if (mode == 5)
+        alpha = 0.5f;
+    float output = pid(error, dt, Kp, 0.0f, Kd, linePD, alpha);
 
     if (error > 0.1)
         last_dir = 1;
@@ -306,11 +360,17 @@ void loop()
         }
     }
 
+    if (!reached_yaw)
+        archTime = millis();
+
+    if (!close_to_yaw)
+        attackTime = millis();
+
     if (started)
     {
+        move_servo = true;
         if (mode == 1 || dyn_mode == 1)
         {
-            move_servo = true;
             if (any_ut1)
             {
                 if (dist[3] < threshold || dist[4] < threshold || dist[5] < threshold)
@@ -327,29 +387,46 @@ void loop()
         }
         else if (mode == 2 || dyn_mode == 2)
         {
-            if (any_ut1)
+            if (any_ut2 || millis() - attackTime > ATTACK_MISSED_TIME)
                 dyn_mode = 1;
-            move_servo = true;
             leftSpeed = (close_to_yaw ? rot_speed : 0) + yaw_output;
             rightSpeed = (close_to_yaw ? rot_speed : 0) - yaw_output;
         }
         else if (mode == 3 || dyn_mode == 3)
         {
-            if (any_ut2)
+            if (any_ut1 || millis() - attackTime > ATTACK_MISSED_TIME)
                 dyn_mode = 1;
-            move_servo = true;
             leftSpeed = (close_to_yaw ? rot_speed : 0) + yaw_output;
             rightSpeed = (close_to_yaw ? rot_speed : 0) - yaw_output;
         }
         else if (mode == 4 || dyn_mode == 4)
         {
-            move_servo = true;
+            if (millis() - archTime < arch_time && reached_yaw)
+            {
+                leftSpeed = arch_speed + (arch_dir * arch_angle);
+                rightSpeed = arch_speed - (arch_dir * arch_angle);
+            }
+            else
+            {
+                leftSpeed = yaw_output;
+                rightSpeed = -yaw_output;
+
+                if (reached_yaw)
+                    dyn_mode = 1;
+            }
+        }
+        else if (mode == 5 || dyn_mode == 5)
+        {
             leftSpeed = yaw_output;
             rightSpeed = -yaw_output;
-            if (millis() - archTime < arch_time)
+
+            if (reached_yaw)
             {
-                leftSpeed = arch_speed;
-                rightSpeed = arch_speed;
+                leftSpeed = 15 + output;
+                rightSpeed = 15 - output;
+
+                if (any_ut2)
+                    dyn_mode = 1;
             }
         }
     }
@@ -357,8 +434,9 @@ void loop()
     {
         ramp_up1 = 0.0f;
         dyn_mode = mode;
-        arch_time = millis();
-        arch_dir = (targetYaw - yaw);
+        arch_dir = (yaw_diff > 0) ? 1 : -1;
+        reached_yaw = false;
+        ATTACK_MISSED_TIME = estimateTime(0.325f, rot_speed) * 1000.0f;
     }
 
     leftSpeed = constrain(leftSpeed, -max_speed, max_speed);
@@ -371,6 +449,17 @@ void loop()
     if (millis() - lastDisplayUpdate > DISPLAY_UPDATE_INTERVAL)
     {
         lastDisplayUpdate = millis();
+
+        static bool lastFlipped = false;
+        if (screen_flipped != lastFlipped)
+        {
+            if (screen_flipped)
+                u8g2.setDisplayRotation(U8G2_R2);
+            else
+                u8g2.setDisplayRotation(U8G2_R0);
+
+            lastFlipped = screen_flipped;
+        }
 
         u8g2.clearBuffer();
         u8g2.setFont(u8g2_font_6x10_tf);
@@ -402,12 +491,12 @@ void loop()
             for (int i = 0; i < SENSOR_COUNT; i++)
             {
                 int x = i * 8;
-                if (detect_flag && flag[i])
+                if (detect_flag && flag[screen_flipped ? SENSOR_COUNT - (i + 1) : i])
                 {
                     u8g2.drawFrame(x, 24, 7, 8);
                     u8g2.drawBox(x + 2, 26, 3, 4);
                 }
-                else if (dist[i] < threshold)
+                else if (dist[screen_flipped ? SENSOR_COUNT - (i + 1) : i] < threshold)
                 {
                     u8g2.drawBox(x, 24, 7, 8);
                 }
@@ -437,13 +526,13 @@ void loop()
             u8g2.print(targetYaw, 1);
             u8g2.setCursor(1, 20);
             u8g2.setDrawColor(1);
-            u8g2.print("CY: ");
-            u8g2.print(yaw, 1);
+            u8g2.print("DY: ");
+            u8g2.print(yaw_diff, 1);
             u8g2.setCursor(1, 30);
             u8g2.print("YO: ");
             u8g2.print(yaw_output, 1);
             u8g2.drawCircle(80, 16, 15);
-            u8g2.drawLine(80, 16, 80 + (int)(14 * sin((targetYaw - yaw) * DEG_TO_RAD)), 16 - (int)(14 * cos((targetYaw - yaw) * DEG_TO_RAD)));
+            u8g2.drawLine(80, 16, 80 + (int)(14 * sin((180 * screen_flipped + yaw_diff) * DEG_TO_RAD)), 16 - (int)(14 * cos((180 * screen_flipped + yaw_diff) * DEG_TO_RAD)));
             break;
         }
         case 2:
@@ -802,7 +891,7 @@ void loop()
                     u8g2.setCursor(0, yPositions[0]);
                     u8g2.print(">");
                     u8g2.setCursor(8, yPositions[0]);
-                    u8g2.print("Arch: ");
+                    u8g2.print("Speed: ");
                     u8g2.print(arch_speed, 1);
                     u8g2.setDrawColor(1);
                 }
@@ -848,7 +937,7 @@ void loop()
             else
             {
                 u8g2.setCursor(8, yPositions[1]);
-                u8g2.print("Angle:   ");
+                u8g2.print("Angle: ");
                 u8g2.print(arch_angle, 1);
             }
 
