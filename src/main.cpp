@@ -90,8 +90,6 @@ float estimateTime(float distance_m, float speed_percent, float k = 1.0f)
 
 void setup()
 {
-    Serial.begin(115200);
-
     esp_task_wdt_deinit();
 
     Wire.begin(SDA, SCL);
@@ -213,8 +211,8 @@ unsigned long slowDownTime = 0;
 const unsigned long SERVO_ROTATION_TIME = 180;
 const unsigned long DISPLAY_UPDATE_INTERVAL = 100;
 const unsigned long TARGET_ARROW_SHOW_TIME = 1000;
-const unsigned long SLOW_DOWN_TIME = 1000;
-unsigned long ATTACK_MISSED_TIME = 0;
+const unsigned long SLOW_DOWN_TIME = 500;
+unsigned long ATTACK_MISSED_TIME = 1000;
 
 // TODO - add tactics
 // [x] -    M1 tornado
@@ -222,7 +220,7 @@ unsigned long ATTACK_MISSED_TIME = 0;
 // [x] -    M3 kat, pizda i (czujniki < threshold)
 // [x] -    M4 łuk flagowys
 // [x] -    M5 powolny podjazd
-// [ ] -    M6 flaga i czeka
+// [x] -    M6 flaga i czeka
 // [x] - spowalnianie na blisko
 // [ ] - tune drive pid
 // [x] - wykrywanie flagi
@@ -297,7 +295,7 @@ void loop()
     else
         reachedYawTime = millis();
 
-    if (millis() - reachedYawTime >= 90)
+    if (millis() - reachedYawTime >= 30)
         reached_yaw = true;
 
     close_to_yaw = abs(yaw_diff) <= 25.0f;
@@ -347,15 +345,17 @@ void loop()
         alpha = 0.5f;
     float output = pid(error, dt, Kp, 0.0f, Kd, linePD, alpha);
 
-    if (error > 0.1)
+    if (started ? error > 0.1 : dist[5] < 100 || dist[6] < 100 || dist[7] < 100 || dist[8] < 100)
         last_dir = 1;
-    else if (error < -0.1)
+    else if (started ? error < -0.1 : dist[0] < 100 || dist[1] < 100 || dist[2] < 100 || dist[3] < 100)
         last_dir = -1;
 
     bool any_ut1 = false;
     bool any_ut2 = false;
     bool any_ut3 = false;
+    bool any_ut4 = false;
     bool speed_up = false;
+
     for (uint16_t d : dist)
     {
         if (d < threshold)
@@ -370,19 +370,22 @@ void loop()
         {
             any_ut3 = true;
         }
+        if (d < 70)
+        {
+            any_ut4 = true;
+        }
     }
 
-    if (!any_ut3)
+    if (!any_ut4)
         slowDownTime = millis();
 
     speed_up = millis() - slowDownTime > SLOW_DOWN_TIME;
 
     if (!reached_yaw)
+    {
         archTime = millis();
-
-    if (!close_to_yaw)
         attackTime = millis();
-
+    }
     if (started)
     {
         move_servo = true;
@@ -390,13 +393,13 @@ void loop()
         {
             if (any_ut1)
             {
-
                 if (dist[3] < threshold || dist[4] < threshold || dist[5] < threshold)
                     ramp_up1 = constrain(ramp_up1 + ramp_up_step, -max_speed, max_speed);
                 if (slow_down && any_ut3 && !speed_up)
                     ramp_up1 = 0.0f;
-                leftSpeed = ((slow_down && any_ut3 && !speed_up) ? slow_speed : (speed + ramp_up1)) + output;
-                rightSpeed = ((slow_down && any_ut3 && !speed_up) ? slow_speed : (speed + ramp_up1)) - output;
+
+                leftSpeed = (slow_down && any_ut3 && !speed_up) ? slow_speed + 0.4f * output : (speed + ramp_up1 + output);
+                rightSpeed = (slow_down && any_ut3 && !speed_up) ? slow_speed - 0.4f * output : (speed + ramp_up1 - output);
             }
             else
             {
@@ -409,15 +412,15 @@ void loop()
         {
             if (any_ut2 || millis() - attackTime > ATTACK_MISSED_TIME)
                 dyn_mode = 1;
-            leftSpeed = (close_to_yaw ? rot_speed : 0) + yaw_output;
-            rightSpeed = (close_to_yaw ? rot_speed : 0) - yaw_output;
+            leftSpeed = (reached_yaw ? rot_speed : 0) + yaw_output;
+            rightSpeed = (reached_yaw ? rot_speed : 0) - yaw_output;
         }
         else if (mode == 3 || dyn_mode == 3)
         {
             if (any_ut1 || millis() - attackTime > ATTACK_MISSED_TIME)
                 dyn_mode = 1;
-            leftSpeed = (close_to_yaw ? rot_speed : 0) + yaw_output;
-            rightSpeed = (close_to_yaw ? rot_speed : 0) - yaw_output;
+            leftSpeed = (reached_yaw ? rot_speed : 0) + yaw_output;
+            rightSpeed = (reached_yaw ? rot_speed : 0) - yaw_output;
         }
         else if (mode == 4 || dyn_mode == 4)
         {
@@ -446,6 +449,17 @@ void loop()
                 rightSpeed = 15 - output;
 
                 if (any_ut2)
+                    dyn_mode = 1;
+            }
+        }
+        else if (mode == 6 || dyn_mode == 6)
+        {
+            leftSpeed = yaw_output;
+            rightSpeed = -yaw_output;
+
+            if (reached_yaw)
+            {
+                if (any_ut2 || dist[0] < 300 || dist[8] < 400)
                     dyn_mode = 1;
             }
         }
@@ -540,16 +554,14 @@ void loop()
             {
                 int x = i * 8;
                 int idx = screen_flipped ? SENSOR_COUNT - (i + 1) : i;
+                u8g2.drawFrame(x, 24, 7, 8);
+
                 if (detect_flag && flag[idx])
-                {
-                    u8g2.drawFrame(x, 24, 7, 8);
                     u8g2.drawBox(x + 2, 26, 3, 4);
-                }
                 else if (dist[idx] < threshold)
                     u8g2.drawBox(x, 24, 7, 8);
-                else
-                    u8g2.drawFrame(x, 24, 7, 8);
             }
+
             u8g2.setCursor(75, 32);
             u8g2.print("B: ");
             u8g2.print(analogRead(BAT) * 0.00349f, 1);
