@@ -174,7 +174,7 @@ void handleIR()
         }
         else if (strcmp(m.name, "D") == 0)
         {
-          started = false;
+          delayed_start = started = false;
         }
 
         if (!started)
@@ -196,7 +196,6 @@ void handleIR()
             loadParams();
             anti_retard = !anti_retard;
             play_intro2 = true;
-            
           }
           else if (strcmp(m.name, "OK") == 0 && !repeat)
           {
@@ -209,9 +208,8 @@ void handleIR()
           {
             if (anti_retard)
             {
-              targetYaw = -135;
-              delay(5000);
-              started = true;
+              targetYaw = 135;
+              delayed_start = true;
             }
             else if (selected)
             {
@@ -330,9 +328,8 @@ void handleIR()
           {
             if (anti_retard)
             {
-              targetYaw = 135;
-              delay(5000);
-              started = true;
+              targetYaw = -135;
+              delayed_start = true;
             }
             else if (selected)
             {

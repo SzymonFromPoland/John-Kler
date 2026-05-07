@@ -29,6 +29,7 @@ int last_dir = -1;
 bool reached_yaw = false;
 bool close_to_yaw = false;
 bool servo_toggle = true;
+bool mpu_failed = false;
 
 float yaw = 0.0f;
 float lastTargetYaw = 0.0f;
@@ -54,7 +55,6 @@ void calibrateGyro()
     int samples = 200;
     float sum = 0;
     sensors_event_t a, g, temp;
-
     for (int i = 0; i < samples; i++)
     {
         mpu.getEvent(&a, &g, &temp);
@@ -119,6 +119,7 @@ void setup()
     }
     else
     {
+        mpu_failed = true;
         u8g2.clearBuffer();
         const char *done1 = "MPU6050";
         const char *done2 = "NOT FOUND";
@@ -212,12 +213,14 @@ unsigned long lastDisplayUpdate = 0;
 unsigned long archTime = 0;
 unsigned long attackTime = 0;
 unsigned long slowDownTime = 0;
+unsigned long startTime = 0;
 
 const unsigned long SERVO_ROTATION_TIME = 180;
 const unsigned long DISPLAY_UPDATE_INTERVAL = 100;
 const unsigned long TARGET_ARROW_SHOW_TIME = 1000;
 const unsigned long SLOW_DOWN_TIME = 500;
 unsigned long ATTACK_MISSED_TIME = 1000;
+unsigned long START_DELAY = 4900;
 
 // TODO - add tactics
 // [x] -    M1 tornado
@@ -270,22 +273,25 @@ float ramp_up1;
 
 void loop()
 {
-    unsigned long readStart = millis();
-    dt = (readStart - lastTime) / 1000.0f;
-    lastTime = readStart;
+    unsigned long now = millis();
+    dt = (now - lastTime) / 1000.0f;
+    lastTime = now;
 
     handleIR();
 
     if (doCalibrate && !started)
     {
         drive(0, 0);
-        calibrateGyro();
+        if (!mpu_failed)
+            calibrateGyro();
+
         yaw = 0;
         doCalibrate = false;
     }
 
     sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
+    if (!mpu_failed)
+        mpu.getEvent(&a, &g, &temp);
     float rate = (g.gyro.x - gxBias) * RAD_TO_DEG;
     yaw += rate * dt;
 
@@ -391,6 +397,17 @@ void loop()
         archTime = millis();
         attackTime = millis();
     }
+
+    if (delayed_start)
+    {
+        if (millis() - startTime > START_DELAY)
+            started = true;
+    }
+    else
+    {
+        startTime = millis();
+    }
+
     if (started)
     {
         move_servo = true;
@@ -471,12 +488,13 @@ void loop()
     }
     else
     {
+
         ramp_up1 = 0.0f;
 
         if (anti_retard)
             mode = 5;
         dyn_mode = mode;
-        
+
         arch_dir = (yaw_diff > 0) ? 1 : -1;
         reached_yaw = false;
         ATTACK_MISSED_TIME = estimateTime(0.325f, rot_speed) * 1000.0f;
@@ -561,12 +579,33 @@ void loop()
                 play_intro2 = false;
             }
 
-            u8g2.setCursor(0, 10);
-            u8g2.println("1. Place on the ring");
-            u8g2.setCursor(0, 20);
-            u8g2.println("2. Callibrate (F)");
-            u8g2.setCursor(0, 30);
-            u8g2.println("3. Choose <- or ->");
+            if (delayed_start)
+            {
+                char buf[16];
+
+                float value = (START_DELAY - (millis() - startTime)) / 1000.0;
+
+                if (started)
+                    strcpy(buf, "STARTED");
+                else
+                    dtostrf(value, 0, 1, buf);
+
+                u8g2.setFont(u8g2_font_spleen8x16_me);
+                u8g2.setCursor(
+                    (u8g2.getDisplayWidth() - u8g2.getStrWidth(buf)) / 2,
+                    16);
+                u8g2.print(buf);
+            }
+            else
+            {
+
+                u8g2.setCursor(0, 10);
+                u8g2.println("1. Place on the ring");
+                u8g2.setCursor(0, 20);
+                u8g2.println("2. Callibrate (F)");
+                u8g2.setCursor(0, 30);
+                u8g2.println("3. Choose <- or ->");
+            }
         }
         else
         {
@@ -676,5 +715,5 @@ void loop()
         }
         u8g2.sendBuffer();
     }
-    readTime = millis() - readStart;
+    readTime = millis() - now;
 }

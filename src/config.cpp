@@ -46,6 +46,7 @@ bool test_servo = false;
 
 bool anti_retard = false;
 bool play_intro2 = false;
+bool delayed_start = false;
 
 bool selected = false;
 int selectedOpt = 0;

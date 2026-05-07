@@ -80,6 +80,7 @@ extern int selectedOpt;
 
 extern bool anti_retard;
 extern bool play_intro2;
+extern bool delayed_start;
 
 extern float flag_threshold;
 extern float arch_angle;
