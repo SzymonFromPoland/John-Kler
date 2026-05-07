@@ -44,6 +44,9 @@ bool doCalibrate = false;
 bool move_servo = false;
 bool test_servo = false;
 
+bool anti_retard = false;
+bool play_intro2 = false;
+
 bool selected = false;
 int selectedOpt = 0;
 int mode = 1;

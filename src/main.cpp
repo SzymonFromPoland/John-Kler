@@ -14,6 +14,7 @@
 #include <sensors.h>
 #include <controller.h>
 #include <intro.h>
+#include <intro2.h>
 
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 Preferences prefs_global;
@@ -132,7 +133,11 @@ void setup()
         delay(750);
     }
 
-    if (play_intro)
+    if (anti_retard)
+    {
+        play_intro2 = true;
+    }
+    else if (play_intro)
     {
         for (int i = 0; i < 5; i++)
         {
@@ -222,7 +227,7 @@ unsigned long ATTACK_MISSED_TIME = 1000;
 // [x] -    M5 powolny podjazd
 // [x] -    M6 flaga i czeka
 // [x] - spowalnianie na blisko
-// [ ] - tune drive pid
+// [x] - tune drive pid
 // [x] - wykrywanie flagi
 
 void handleServo()
@@ -467,7 +472,11 @@ void loop()
     else
     {
         ramp_up1 = 0.0f;
+
+        if (anti_retard)
+            mode = 5;
         dyn_mode = mode;
+        
         arch_dir = (yaw_diff > 0) ? 1 : -1;
         reached_yaw = false;
         ATTACK_MISSED_TIME = estimateTime(0.325f, rot_speed) * 1000.0f;
@@ -500,7 +509,6 @@ void loop()
         u8g2.setFont(u8g2_font_6x10_tf);
         u8g2.setDrawColor(1);
 
-        // Adaptive Helper: Handles paging, highlighting, and labels automatically
         auto drawOption = [&](int index, const char *label, float value, int precision, bool isBool = false)
         {
             int page = selectedOpt / 2;
@@ -532,108 +540,139 @@ void loop()
             u8g2.setDrawColor(1);
         };
 
-        switch (m.id)
+        if (anti_retard)
         {
-        case 0:
-            u8g2.setCursor(0, 10);
-            u8g2.print(started ? "ON " : "OFF");
-            u8g2.print(" M");
-            u8g2.print(mode);
-            u8g2.print(" FD: ");
-            u8g2.print(detect_flag ? "YES " : "NO  ");
-            u8g2.print(readTime);
-            u8g2.print("ms");
+            if (play_intro2)
+            {
+                for (int i = 0; i < 27; i++)
+                {
+                    u8g2.clearBuffer();
 
+                    u8g2.drawBitmap(
+                        0, 0,
+                        16, 32,
+                        epd_bitmap2_allArray[i]);
+
+                    u8g2.sendBuffer();
+                    delay(50);
+                }
+                delay(750);
+
+                play_intro2 = false;
+            }
+
+            u8g2.setCursor(0, 10);
+            u8g2.println("1. Place on the ring");
             u8g2.setCursor(0, 20);
-            u8g2.print("e: ");
-            u8g2.print(error, 2);
-            u8g2.print(" o: ");
-            u8g2.print(output, 2);
-
-            for (int i = 0; i < SENSOR_COUNT; i++)
+            u8g2.println("2. Callibrate (F)");
+            u8g2.setCursor(0, 30);
+            u8g2.println("3. Choose <- or ->");
+        }
+        else
+        {
+            switch (m.id)
             {
-                int x = i * 8;
-                int idx = screen_flipped ? SENSOR_COUNT - (i + 1) : i;
-                u8g2.drawFrame(x, 24, 7, 8);
+            case 0:
+                u8g2.setCursor(0, 10);
+                u8g2.print(started ? "ON " : "OFF");
+                u8g2.print(" M");
+                u8g2.print(mode);
+                u8g2.print(" FD: ");
+                u8g2.print(detect_flag ? "YES " : "NO  ");
+                u8g2.print(readTime);
+                u8g2.print("ms");
 
-                if (detect_flag && flag[idx])
-                    u8g2.drawBox(x + 2, 26, 3, 4);
-                else if (dist[idx] < threshold)
-                    u8g2.drawBox(x, 24, 7, 8);
+                u8g2.setCursor(0, 20);
+                u8g2.print("e: ");
+                u8g2.print(error, 2);
+                u8g2.print(" o: ");
+                u8g2.print(output, 2);
+
+                for (int i = 0; i < SENSOR_COUNT; i++)
+                {
+                    int x = i * 8;
+                    int idx = screen_flipped ? SENSOR_COUNT - (i + 1) : i;
+                    u8g2.drawFrame(x, 24, 7, 8);
+
+                    if (detect_flag && flag[idx])
+                        u8g2.drawBox(x + 2, 26, 3, 4);
+                    else if (dist[idx] < threshold)
+                        u8g2.drawBox(x, 24, 7, 8);
+                }
+
+                u8g2.setCursor(75, 32);
+                u8g2.print("B: ");
+                u8g2.print(analogRead(BAT) * 0.00349f, 1);
+                u8g2.print("V");
+                break;
+
+            case 1:
+                u8g2.setCursor(1, 10);
+                if (selected)
+                {
+                    u8g2.drawBox(0, 2, 60, 10);
+                    u8g2.setDrawColor(0);
+                }
+                u8g2.print("TY: ");
+                u8g2.print(targetYaw, 1);
+                u8g2.setDrawColor(1);
+                u8g2.setCursor(1, 20);
+                u8g2.print("DY: ");
+                u8g2.print(yaw_diff, 1);
+                u8g2.setCursor(1, 30);
+                u8g2.print("YO: ");
+                u8g2.print(yaw_output, 1);
+                u8g2.drawCircle(80, 16, 15);
+                u8g2.drawLine(80, 16, 80 + (int)(14 * sin((180 * screen_flipped + yaw_diff) * DEG_TO_RAD)), 16 - (int)(14 * cos((180 * screen_flipped + yaw_diff) * DEG_TO_RAD)));
+                break;
+
+            case 2:
+                u8g2.setCursor(0, 10);
+                u8g2.print("Speed Control");
+                drawOption(0, "Speed: ", speed, 0);
+                drawOption(1, "MAX:   ", max_speed, 0);
+                drawOption(2, "Rot:   ", rot_speed, 0);
+                drawOption(3, "Ramp:  ", ramp_up_step, 2);
+                drawOption(4, "Slow:  ", slow_speed, 0);
+                break;
+
+            case 3:
+                u8g2.setCursor(0, 10);
+                u8g2.print("Drive PD");
+                drawOption(0, "Kp: ", Kp, 4);
+                drawOption(1, "Kd: ", Kd, 4);
+                break;
+
+            case 4:
+                u8g2.setCursor(0, 10);
+                u8g2.print("Gyro PD");
+                drawOption(0, "Kp: ", yawKp, 6);
+                drawOption(1, "Kd: ", yawKd, 6);
+                break;
+
+            case 5:
+                u8g2.setCursor(0, 10);
+                u8g2.print("Thresholds");
+                drawOption(0, "FDTh: ", flag_threshold, 0);
+                drawOption(1, "STh:  ", threshold, 0);
+                drawOption(2, "SDTh: ", slow_threshold, 0);
+                break;
+
+            case 6:
+                u8g2.setCursor(0, 10);
+                u8g2.print("Arch Control");
+                drawOption(0, "Speed: ", arch_speed, 1);
+                drawOption(1, "Angle: ", arch_angle, 1);
+                drawOption(2, "Time:  ", arch_time, 0);
+                break;
+
+            case 7:
+                u8g2.setCursor(0, 10);
+                u8g2.print("Extra Settings");
+                drawOption(0, "Slow:  ", slow_down, 0, true);
+                drawOption(1, "Intro: ", play_intro, 0, true);
+                break;
             }
-
-            u8g2.setCursor(75, 32);
-            u8g2.print("B: ");
-            u8g2.print(analogRead(BAT) * 0.00349f, 1);
-            u8g2.print("V");
-            break;
-
-        case 1:
-            u8g2.setCursor(1, 10);
-            if (selected)
-            {
-                u8g2.drawBox(0, 2, 60, 10);
-                u8g2.setDrawColor(0);
-            }
-            u8g2.print("TY: ");
-            u8g2.print(targetYaw, 1);
-            u8g2.setDrawColor(1);
-            u8g2.setCursor(1, 20);
-            u8g2.print("DY: ");
-            u8g2.print(yaw_diff, 1);
-            u8g2.setCursor(1, 30);
-            u8g2.print("YO: ");
-            u8g2.print(yaw_output, 1);
-            u8g2.drawCircle(80, 16, 15);
-            u8g2.drawLine(80, 16, 80 + (int)(14 * sin((180 * screen_flipped + yaw_diff) * DEG_TO_RAD)), 16 - (int)(14 * cos((180 * screen_flipped + yaw_diff) * DEG_TO_RAD)));
-            break;
-
-        case 2:
-            u8g2.setCursor(0, 10);
-            u8g2.print("Speed Control");
-            drawOption(0, "Speed: ", speed, 0);
-            drawOption(1, "MAX:   ", max_speed, 0);
-            drawOption(2, "Rot:   ", rot_speed, 0);
-            drawOption(3, "Ramp:  ", ramp_up_step, 2);
-            drawOption(4, "Slow:  ", slow_speed, 0);
-            break;
-
-        case 3:
-            u8g2.setCursor(0, 10);
-            u8g2.print("Drive PD");
-            drawOption(0, "Kp: ", Kp, 4);
-            drawOption(1, "Kd: ", Kd, 4);
-            break;
-
-        case 4:
-            u8g2.setCursor(0, 10);
-            u8g2.print("Gyro PD");
-            drawOption(0, "Kp: ", yawKp, 6);
-            drawOption(1, "Kd: ", yawKd, 6);
-            break;
-
-        case 5:
-            u8g2.setCursor(0, 10);
-            u8g2.print("Thresholds");
-            drawOption(0, "FDTh: ", flag_threshold, 0);
-            drawOption(1, "STh:  ", threshold, 0);
-            drawOption(2, "SDTh: ", slow_threshold, 0);
-            break;
-
-        case 6:
-            u8g2.setCursor(0, 10);
-            u8g2.print("Arch Control");
-            drawOption(0, "Speed: ", arch_speed, 1);
-            drawOption(1, "Angle: ", arch_angle, 1);
-            drawOption(2, "Time:  ", arch_time, 0);
-            break;
-
-        case 7:
-            u8g2.setCursor(0, 10);
-            u8g2.print("Extra Settings");
-            drawOption(0, "Slow:  ", slow_down, 0, true);
-            drawOption(1, "Intro: ", play_intro, 0, true);
-            break;
         }
         u8g2.sendBuffer();
     }

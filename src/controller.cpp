@@ -55,8 +55,10 @@ void saveParams()
   prefs_global.putFloat("arch_angle", arch_angle);
   prefs_global.putFloat("arch_speed", arch_speed);
   prefs_global.putFloat("arch_time", arch_time);
-  prefs_global.putFloat("mode", (float)mode);
+  if (!anti_retard)
+    prefs_global.putFloat("mode", (float)mode);
   prefs_global.putFloat("screen_flipped", (float)screen_flipped);
+  prefs_global.putFloat("anti_retard", (float)anti_retard);
   prefs_global.putFloat("slow_down", (float)slow_down);
   prefs_global.putFloat("play_intro", (float)play_intro);
   prefs_global.putFloat("slow_threshold", slow_threshold);
@@ -83,6 +85,7 @@ void loadParams()
   arch_time = prefs_global.getFloat("arch_time", 1000.0f);
   mode = (int)prefs_global.getFloat("mode", 1.0f);
   screen_flipped = (bool)prefs_global.getFloat("screen_flipped", 0.0f);
+  anti_retard = (bool)prefs_global.getFloat("anti_retard", 0.0f);
   slow_down = (bool)prefs_global.getFloat("slow_down", 0.0f);
   play_intro = (bool)prefs_global.getFloat("play_intro", 0.0f);
   slow_threshold = prefs_global.getFloat("slow_threshold", 100.0f);
@@ -188,6 +191,13 @@ void handleIR()
           {
             screen_flipped = !screen_flipped;
           }
+          else if (strcmp(m.name, "C") == 0 && !repeat)
+          {
+            loadParams();
+            anti_retard = !anti_retard;
+            play_intro2 = true;
+            
+          }
           else if (strcmp(m.name, "OK") == 0 && !repeat)
           {
             if (menu != 0)
@@ -197,7 +207,13 @@ void handleIR()
           }
           else if (strcmp(m.name, "RIGHT") == 0)
           {
-            if (selected)
+            if (anti_retard)
+            {
+              targetYaw = -135;
+              delay(5000);
+              started = true;
+            }
+            else if (selected)
             {
               if (menu == 1)
               {
@@ -312,7 +328,13 @@ void handleIR()
           }
           else if (strcmp(m.name, "LEFT") == 0)
           {
-            if (selected)
+            if (anti_retard)
+            {
+              targetYaw = 135;
+              delay(5000);
+              started = true;
+            }
+            else if (selected)
             {
               if (menu == 1)
               {

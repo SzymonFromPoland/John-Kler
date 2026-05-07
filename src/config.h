@@ -78,6 +78,9 @@ extern int menu_count;
 extern bool selected;
 extern int selectedOpt;
 
+extern bool anti_retard;
+extern bool play_intro2;
+
 extern float flag_threshold;
 extern float arch_angle;
 extern float arch_speed;
