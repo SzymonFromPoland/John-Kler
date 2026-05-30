@@ -33,10 +33,16 @@ bool mpu_failed = false;
 
 float yaw = 0.0f;
 float lastTargetYaw = 0.0f;
-float gxBias = 0;
+float bias = 0;
 
 void calibrateGyro()
 {
+    if (mpu_failed)
+    {
+        DEBUG_PRINTLN("Skipping gyro calibration - MPU6050 not available");
+        return;
+    }
+
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_spleen8x16_me);
 
@@ -58,9 +64,9 @@ void calibrateGyro()
     for (int i = 0; i < samples; i++)
     {
         mpu.getEvent(&a, &g, &temp);
-        sum += g.gyro.x;
+        sum += g.gyro.z;
     }
-    gxBias = sum / (float)samples;
+    bias = sum / (float)samples;
 
     u8g2.clearBuffer();
     const char *done1 = "CALIBRATION";
@@ -74,6 +80,28 @@ void calibrateGyro()
 
     u8g2.sendBuffer();
     delay(1000);
+}
+
+void scanI2C()
+{
+    DEBUG_PRINTLN("\n=== I2C SCAN START ===");
+    DEBUG_PRINTLN("Scanning I2C bus for devices...");
+
+    int deviceCount = 0;
+
+    for (uint8_t addr = 1; addr < 127; addr++)
+    {
+        Wire.beginTransmission(addr);
+        uint8_t error = Wire.endTransmission();
+
+        if (error == 0)
+        {
+            DEBUG_PRINTF("Found device at 0x%02X\n", addr);
+            deviceCount++;
+        }
+    }
+
+    DEBUG_PRINTF("=== I2C SCAN COMPLETE: Found %d device(s) ===\n", deviceCount);
 }
 
 float estimateTime(float distance_m, float speed_percent, float k = 1.0f)
@@ -93,14 +121,36 @@ void setup()
 {
     esp_task_wdt_deinit();
 
-    Wire.begin(SDA, SCL);
-    Wire.setClock(400000);
+    DEBUG_INIT();
+    DEBUG_PRINTLN("System starting...");
+
+    Wire.begin(SDA, SCL, 600000);
+    Wire.end();
+    Wire.begin(SDA, SCL, 600000);
+    Wire.end();
 
     setup_sensors();
+    DEBUG_PRINTLN("Sensors initialized");
     setup_motors();
+    DEBUG_PRINTLN("Motors initialized");
     startIRTask(RCV);
+    DEBUG_PRINTLN("IR task started");
 
-    u8g2.begin();
+    Wire.beginTransmission(0x3C);
+    if (Wire.endTransmission() == 0)
+    {
+        u8g2.setI2CAddress(0x3C << 1);
+        if (u8g2.begin())
+        {
+            DEBUG_PRINTLN("Display initialized");
+        }
+        else
+        {
+            DEBUG_PRINTLN("ERROR: Display not initialized!");
+            while (1)
+                ;
+        }
+    }
 
     drive(0, 0);
 
@@ -111,27 +161,30 @@ void setup()
 
     if (mpu.begin(0x68))
     {
+        DEBUG_PRINTLN("MPU6050 found and initialized");
         mpu.setAccelerometerRange(MPU6050_RANGE_16_G);
         mpu.setGyroRange(MPU6050_RANGE_2000_DEG);
         mpu.setFilterBandwidth(MPU6050_BAND_260_HZ);
         mpu.setSampleRateDivisor(0);
         mpu.setHighPassFilter(MPU6050_HIGHPASS_0_63_HZ);
+        DEBUG_PRINTLN("MPU6050 configured");
     }
     else
     {
+        DEBUG_PRINTLN("ERROR: MPU6050 not found!");
         mpu_failed = true;
-        u8g2.clearBuffer();
-        const char *done1 = "MPU6050";
-        const char *done2 = "NOT FOUND";
+        // u8g2.clearBuffer();
+        // const char *done1 = "MPU6050";
+        // const char *done2 = "NOT FOUND";
 
-        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done1)) / 2, 16);
-        u8g2.println(done1);
+        // u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done1)) / 2, 16);
+        // u8g2.println(done1);
 
-        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done2)) / 2, 32);
-        u8g2.println(done2);
+        // u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done2)) / 2, 32);
+        // u8g2.println(done2);
 
-        u8g2.sendBuffer();
-        delay(750);
+        // u8g2.sendBuffer();
+        // delay(750);
     }
 
     if (anti_retard)
@@ -292,7 +345,11 @@ void loop()
     sensors_event_t a, g, temp;
     if (!mpu_failed)
         mpu.getEvent(&a, &g, &temp);
-    float rate = (g.gyro.x - gxBias) * RAD_TO_DEG;
+
+    float rate = 0.0f;
+    if (!mpu_failed)
+        rate = (g.gyro.z - bias) * RAD_TO_DEG;
+
     yaw += rate * dt;
 
     yaw = fmod(yaw + 360.0f, 360.0f);

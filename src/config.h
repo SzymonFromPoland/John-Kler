@@ -3,6 +3,21 @@
 
 #include <Arduino.h>
 
+#define DEBUG_ENABLED false
+#define DEBUG_BAUD_RATE 115200
+
+#if DEBUG_ENABLED
+    #define DEBUG_INIT() Serial.begin(DEBUG_BAUD_RATE)
+    #define DEBUG_PRINT(x) Serial.print(x)
+    #define DEBUG_PRINTLN(x) Serial.println(x)
+    #define DEBUG_PRINTF(fmt, ...) Serial.printf(fmt, ##__VA_ARGS__)
+#else
+    #define DEBUG_INIT() do {} while(0)
+    #define DEBUG_PRINT(x) do {} while(0)
+    #define DEBUG_PRINTLN(x) do {} while(0)
+    #define DEBUG_PRINTF(fmt, ...) do {} while(0)
+#endif
+
 #define M1A 16
 #define M2A 17
 
