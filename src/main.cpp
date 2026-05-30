@@ -167,24 +167,23 @@ void setup()
         mpu.setFilterBandwidth(MPU6050_BAND_260_HZ);
         mpu.setSampleRateDivisor(0);
         mpu.setHighPassFilter(MPU6050_HIGHPASS_0_63_HZ);
-        DEBUG_PRINTLN("MPU6050 configured");
     }
     else
     {
         DEBUG_PRINTLN("ERROR: MPU6050 not found!");
         mpu_failed = true;
-        // u8g2.clearBuffer();
-        // const char *done1 = "MPU6050";
-        // const char *done2 = "NOT FOUND";
+        u8g2.clearBuffer();
+        const char *done1 = "MPU6050";
+        const char *done2 = "NOT FOUND";
 
-        // u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done1)) / 2, 16);
-        // u8g2.println(done1);
+        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done1)) / 2, 16);
+        u8g2.println(done1);
 
-        // u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done2)) / 2, 32);
-        // u8g2.println(done2);
+        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done2)) / 2, 32);
+        u8g2.println(done2);
 
-        // u8g2.sendBuffer();
-        // delay(750);
+        u8g2.sendBuffer();
+        delay(750);
     }
 
     if (anti_retard)
@@ -332,27 +331,28 @@ void loop()
 
     handleIR();
 
-    if (doCalibrate && !started)
+    if (doCalibrate && !started && !mpu_failed)
     {
         drive(0, 0);
-        if (!mpu_failed)
-            calibrateGyro();
-
+        calibrateGyro();
         yaw = 0;
         doCalibrate = false;
     }
 
     sensors_event_t a, g, temp;
-    if (!mpu_failed)
-        mpu.getEvent(&a, &g, &temp);
-
     float rate = 0.0f;
     if (!mpu_failed)
+    {
+        mpu.getEvent(&a, &g, &temp);
         rate = (g.gyro.z - bias) * RAD_TO_DEG;
+        yaw += rate * dt;
+        yaw = fmod(yaw + 360.0f, 360.0f);
+    }
+    else
+    {
+        yaw = 0;
+    }
 
-    yaw += rate * dt;
-
-    yaw = fmod(yaw + 360.0f, 360.0f);
     float yaw_diff = targetYaw - yaw;
     yaw_diff = fmod(yaw_diff + 540.0f, 360.0f) - 180.0f;
 
@@ -584,6 +584,7 @@ void loop()
         u8g2.setFont(u8g2_font_6x10_tf);
         u8g2.setDrawColor(1);
 
+        // draw menu funct
         auto drawOption = [&](int index, const char *label, float value, int precision, bool isBool = false)
         {
             int page = selectedOpt / 2;
@@ -614,8 +615,27 @@ void loop()
                 u8g2.print(value, precision);
             u8g2.setDrawColor(1);
         };
+        // end
 
-        if (anti_retard)
+        if (delayed_start)
+        {
+            char buf[16];
+
+            float value = (START_DELAY - (millis() - startTime)) / 1000.0;
+
+            if (started)
+                // strcpy(buf, "STARTED");
+                delayed_start = false;
+            else
+                dtostrf(value, 0, 1, buf);
+
+            u8g2.setFont(u8g2_font_spleen8x16_me);
+            u8g2.setCursor(
+                (u8g2.getDisplayWidth() - u8g2.getStrWidth(buf)) / 2,
+                16);
+            u8g2.print(buf);
+        }
+        else if (anti_retard)
         {
             if (play_intro2)
             {
@@ -635,34 +655,12 @@ void loop()
 
                 play_intro2 = false;
             }
-
-            if (delayed_start)
-            {
-                char buf[16];
-
-                float value = (START_DELAY - (millis() - startTime)) / 1000.0;
-
-                if (started)
-                    strcpy(buf, "STARTED");
-                else
-                    dtostrf(value, 0, 1, buf);
-
-                u8g2.setFont(u8g2_font_spleen8x16_me);
-                u8g2.setCursor(
-                    (u8g2.getDisplayWidth() - u8g2.getStrWidth(buf)) / 2,
-                    16);
-                u8g2.print(buf);
-            }
-            else
-            {
-
-                u8g2.setCursor(0, 10);
-                u8g2.println("1. Place on the ring");
-                u8g2.setCursor(0, 20);
-                u8g2.println("2. Callibrate (F)");
-                u8g2.setCursor(0, 30);
-                u8g2.println("3. Choose <- or ->");
-            }
+            u8g2.setCursor(0, 10);
+            u8g2.println("1. Place on the ring");
+            u8g2.setCursor(0, 20);
+            u8g2.println("2. Callibrate (F)");
+            u8g2.setCursor(0, 30);
+            u8g2.println("3. Choose <- or ->");
         }
         else
         {
@@ -767,9 +765,11 @@ void loop()
                 u8g2.print("Extra Settings");
                 drawOption(0, "Slow:  ", slow_down, 0, true);
                 drawOption(1, "Intro: ", play_intro, 0, true);
+                drawOption(2, "Delay: ", delay_start, 0, true);
                 break;
             }
         }
+
         u8g2.sendBuffer();
     }
     readTime = millis() - now;

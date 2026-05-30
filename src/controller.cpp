@@ -63,6 +63,7 @@ void saveParams()
   prefs_global.putFloat("play_intro", (float)play_intro);
   prefs_global.putFloat("slow_threshold", slow_threshold);
   prefs_global.putFloat("slow_speed", slow_speed);
+  prefs_global.putFloat("delay_start", (float)delay_start);
   prefs_global.end();
 }
 
@@ -90,6 +91,7 @@ void loadParams()
   play_intro = (bool)prefs_global.getFloat("play_intro", 0.0f);
   slow_threshold = prefs_global.getFloat("slow_threshold", 100.0f);
   slow_speed = prefs_global.getFloat("slow_speed", 30.0f);
+  delay_start = (bool)prefs_global.getFloat("delay_start", 0.0f);
   prefs_global.end();
 }
 
@@ -170,7 +172,10 @@ void handleIR()
       {
         if (strcmp(m.name, "E") == 0)
         {
-          started = true;
+          if (delay_start)
+            delayed_start = true;
+          else
+            started = true;
         }
         else if (strcmp(m.name, "D") == 0)
         {
@@ -314,6 +319,10 @@ void handleIR()
                 {
                   play_intro = !play_intro;
                 }
+                if (selectedOpt == 2 && !repeat)
+                {
+                  delay_start = !delay_start;
+                }
               }
             }
             else if (!repeat)
@@ -433,6 +442,10 @@ void handleIR()
                 if (selectedOpt == 1 && !repeat)
                 {
                   play_intro = !play_intro;
+                }
+                if (selectedOpt == 2 && !repeat)
+                {
+                  delay_start = !delay_start;
                 }
               }
             }

@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-#define DEBUG_ENABLED false
+#define DEBUG_ENABLED true
 #define DEBUG_BAUD_RATE 115200
 
 #if DEBUG_ENABLED
@@ -96,6 +96,7 @@ extern int selectedOpt;
 extern bool anti_retard;
 extern bool play_intro2;
 extern bool delayed_start;
+extern bool delay_start;
 
 extern float flag_threshold;
 extern float arch_angle;
