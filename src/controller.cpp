@@ -143,10 +143,15 @@ void handleIR()
     {
       if (command == START)
       {
-        if (wait_for_start)
-          delayed_start = true;
-        else if (!anti_retard)
+        if (anti_retard)
+        {
+          if (wait_for_start)
+            delayed_start = true;
+        }
+        else
+        {
           started = true;
+        }
       }
       else if (command == STOP)
       {

@@ -173,6 +173,7 @@ void setup()
         DEBUG_PRINTLN("ERROR: MPU6050 not found!");
         mpu_failed = true;
         u8g2.clearBuffer();
+        u8g2.setFont(u8g2_font_spleen8x16_me);
         const char *done1 = "MPU6050";
         const char *done2 = "NOT FOUND";
 
@@ -634,7 +635,7 @@ void loop()
                 16);
             u8g2.print(buf);
         }
-        else if (anti_retard)
+        else if (anti_retard && !started)
         {
             if (play_intro2)
             {
@@ -657,13 +658,20 @@ void loop()
 
             if (wait_for_start)
             {
-                u8g2.setCursor(0, 20);
-                u8g2.println("Waiting for start");
+                u8g2.setFont(u8g2_font_spleen8x16_me);
+                const char *done1 = "WAITING TO";
+                const char *done2 = "START";
+
+                u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done1)) / 2, 16);
+                u8g2.println(done1);
+
+                u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(done2)) / 2, 32);
+                u8g2.println(done2);
             }
             else
             {
                 u8g2.setCursor(0, 10);
-                u8g2.println("1. Place on the ring (F)");
+                u8g2.println("1. Place on the ring");
                 u8g2.setCursor(0, 20);
                 u8g2.println("2. Callibrate (F)");
                 u8g2.setCursor(0, 30);
