@@ -55,6 +55,7 @@ void saveParams()
   prefs_global.putFloat("arch_angle", arch_angle);
   prefs_global.putFloat("arch_speed", arch_speed);
   prefs_global.putFloat("arch_time", arch_time);
+  prefs_global.putFloat("ar_angle", anti_retard_angle);
   if (!anti_retard)
     prefs_global.putFloat("mode", (float)mode);
   prefs_global.putFloat("screen_flipped", (float)screen_flipped);
@@ -84,6 +85,7 @@ void loadParams()
   arch_angle = prefs_global.getFloat("arch_angle", 50.0f);
   arch_speed = prefs_global.getFloat("arch_speed", 100.0f);
   arch_time = prefs_global.getFloat("arch_time", 1000.0f);
+  anti_retard_angle = prefs_global.getFloat("ar_angle", 0.0f);
   mode = (int)prefs_global.getFloat("mode", 1.0f);
   screen_flipped = (bool)prefs_global.getFloat("screen_flipped", 0.0f);
   anti_retard = (bool)prefs_global.getFloat("anti_retard", 0.0f);
@@ -140,9 +142,16 @@ void handleIR()
     else if (address == 0x07)
     {
       if (command == START)
-        started = true;
+      {
+        if (wait_for_start)
+          delayed_start = true;
+        else if (!anti_retard)
+          started = true;
+      }
       else if (command == STOP)
-        started = false;
+      {
+        wait_for_start = delayed_start = started = false;
+      }
     }
     break;
   }
@@ -213,8 +222,9 @@ void handleIR()
           {
             if (anti_retard)
             {
-              targetYaw = 135;
-              delayed_start = true;
+              targetYaw = anti_retard_angle; // change to 135 in the competitions with mandatory placement
+              // delayed_start = true;
+              wait_for_start = true;
             }
             else if (selected)
             {
@@ -323,6 +333,11 @@ void handleIR()
                 {
                   delay_start = !delay_start;
                 }
+                if (selectedOpt == 3)
+                {
+                  anti_retard_angle += 5.0f;
+                  anti_retard_angle = constrain(anti_retard_angle, 0, 180);
+                }
               }
             }
             else if (!repeat)
@@ -337,8 +352,9 @@ void handleIR()
           {
             if (anti_retard)
             {
-              targetYaw = -135;
-              delayed_start = true;
+              targetYaw = -anti_retard_angle; // change to -135 in the competitions with mandatory placement
+              // delayed_start = true;
+              wait_for_start = true;
             }
             else if (selected)
             {
@@ -446,6 +462,11 @@ void handleIR()
                 if (selectedOpt == 2 && !repeat)
                 {
                   delay_start = !delay_start;
+                }
+                if (selectedOpt == 3)
+                {
+                  anti_retard_angle -= 5.0f;
+                  anti_retard_angle = constrain(anti_retard_angle, 0, 180);
                 }
               }
             }

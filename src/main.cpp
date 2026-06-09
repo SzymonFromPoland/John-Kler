@@ -624,7 +624,6 @@ void loop()
             float value = (START_DELAY - (millis() - startTime)) / 1000.0;
 
             if (started)
-                // strcpy(buf, "STARTED");
                 delayed_start = false;
             else
                 dtostrf(value, 0, 1, buf);
@@ -655,12 +654,21 @@ void loop()
 
                 play_intro2 = false;
             }
-            u8g2.setCursor(0, 10);
-            u8g2.println("1. Place on the ring");
-            u8g2.setCursor(0, 20);
-            u8g2.println("2. Callibrate (F)");
-            u8g2.setCursor(0, 30);
-            u8g2.println("3. Choose <- or ->");
+
+            if (wait_for_start)
+            {
+                u8g2.setCursor(0, 20);
+                u8g2.println("Waiting for start");
+            }
+            else
+            {
+                u8g2.setCursor(0, 10);
+                u8g2.println("1. Place on the ring (F)");
+                u8g2.setCursor(0, 20);
+                u8g2.println("2. Callibrate (F)");
+                u8g2.setCursor(0, 30);
+                u8g2.println("3. Choose <- or ->");
+            }
         }
         else
         {
@@ -766,6 +774,7 @@ void loop()
                 drawOption(0, "Slow:  ", slow_down, 0, true);
                 drawOption(1, "Intro: ", play_intro, 0, true);
                 drawOption(2, "Delay: ", delay_start, 0, true);
+                drawOption(3, "AR ang: ", anti_retard_angle, 1);
                 break;
             }
         }

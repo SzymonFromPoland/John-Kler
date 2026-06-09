@@ -15,7 +15,7 @@ Menu menus[] = {
     {4, 2},
     {5, 3},
     {6, 3},
-    {7, 3}};
+    {7, 4}};
 
 float threshold = 300.0f;
 float slow_threshold = 300.0f;
@@ -45,9 +45,11 @@ bool move_servo = false;
 bool test_servo = false;
 
 bool anti_retard = false;
+float anti_retard_angle = 0.0f;
 bool play_intro2 = false;
 bool delayed_start = false;
 bool delay_start = false;
+bool wait_for_start = false;
 
 bool selected = false;
 int selectedOpt = 0;

@@ -94,9 +94,11 @@ extern bool selected;
 extern int selectedOpt;
 
 extern bool anti_retard;
+extern float anti_retard_angle;
 extern bool play_intro2;
 extern bool delayed_start;
 extern bool delay_start;
+extern bool wait_for_start;
 
 extern float flag_threshold;
 extern float arch_angle;
