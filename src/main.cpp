@@ -34,6 +34,8 @@ bool mpu_failed = false;
 float yaw = 0.0f;
 float lastTargetYaw = 0.0f;
 float bias = 0;
+unsigned long bootTime = 0;
+bool digital_start_mode = false;
 
 void calibrateGyro()
 {
@@ -209,6 +211,8 @@ void setup()
             }
         }
     }
+
+    bootTime = millis();
 }
 
 struct PDState
@@ -289,7 +293,7 @@ unsigned long START_DELAY = 4900;
 void handleServo()
 {
 
-    if (!started)
+    if (status == STOPPED)
     {
         servo_toggle = true;
         move_servo = false;
@@ -330,9 +334,37 @@ void loop()
     dt = (now - lastTime) / 1000.0f;
     lastTime = now;
 
-    handleIR();
+    if (!digital_start_mode && !nec_signal_seen && (now - bootTime >= 5000UL))
+    {
+        digital_start_mode = true;
+        pinMode(RCV, INPUT_PULLUP);
+        status = STOPPED;
+    }
 
-    if (doCalibrate && !started && !mpu_failed)
+    if (!digital_start_mode)
+    {
+        handleIR();
+    }
+    else
+    {
+        bool digital_start_high = digitalRead(RCV) == HIGH;
+
+        if (digital_start_high)
+        {
+            if (status == STOPPED)
+            {
+                status = delay_start ? COUNTDOWN : STARTED;
+                if (status == COUNTDOWN)
+                    startTime = now;
+            }
+        }
+        else
+        {
+            status = STOPPED;
+        }
+    }
+
+    if (doCalibrate && status == STOPPED && !mpu_failed)
     {
         drive(0, 0);
         calibrateGyro();
@@ -375,27 +407,27 @@ void loop()
     }
     else if (mode == 2 || dyn_mode == 2)
     {
-        if (reached_yaw || !started)
+        if (reached_yaw || status == STOPPED)
             read_sensors(results);
     }
     else if (mode == 3 || dyn_mode == 3)
     {
-        if (close_to_yaw || !started)
+        if (close_to_yaw || status == STOPPED)
             read_sensors(results);
     }
     else if (mode == 4 || dyn_mode == 4)
     {
-        if (close_to_yaw || !started)
+        if (close_to_yaw || status == STOPPED)
             read_sensors(results);
     }
     else if (mode == 5 || dyn_mode == 5)
     {
-        if (reached_yaw || !started)
+        if (reached_yaw || status == STOPPED)
             read_sensors(results);
     }
     else if (mode == 6 || dyn_mode == 6)
     {
-        if (reached_yaw || !started)
+        if (reached_yaw || status == STOPPED)
             read_sensors(results);
     }
 
@@ -414,9 +446,9 @@ void loop()
         alpha = 0.5f;
     float output = pid(error, dt, Kp, 0.0f, Kd, linePD, alpha);
 
-    if (started ? error > 0.1 : dist[5] < 100 || dist[6] < 100 || dist[7] < 100 || dist[8] < 100)
+    if (status == STARTED ? error > 0.1 : dist[5] < 100 || dist[6] < 100 || dist[7] < 100 || dist[8] < 100)
         last_dir = 1;
-    else if (started ? error < -0.1 : dist[0] < 100 || dist[1] < 100 || dist[2] < 100 || dist[3] < 100)
+    else if (status == STARTED ? error < -0.1 : dist[0] < 100 || dist[1] < 100 || dist[2] < 100 || dist[3] < 100)
         last_dir = -1;
 
     bool any_ut1 = false;
@@ -456,17 +488,17 @@ void loop()
         attackTime = millis();
     }
 
-    if (delayed_start)
+    if (status == COUNTDOWN)
     {
         if (millis() - startTime > START_DELAY)
-            started = true;
+            status = STARTED;
     }
     else
     {
         startTime = millis();
     }
 
-    if (started)
+    if (status == STARTED)
     {
         move_servo = true;
         if (mode == 1 || dyn_mode == 1)
@@ -561,7 +593,7 @@ void loop()
     leftSpeed = constrain(leftSpeed, -max_speed, max_speed);
     rightSpeed = constrain(rightSpeed, -max_speed, max_speed);
 
-    drive(started ? leftSpeed : 0, started ? rightSpeed : 0);
+    drive(status == STARTED ? leftSpeed : 0, status == STARTED ? rightSpeed : 0);
 
     handleServo();
 
@@ -618,16 +650,32 @@ void loop()
         };
         // end
 
-        if (delayed_start)
+        if (!digital_start_mode && !nec_signal_seen)
+        {
+            float remaining = 5.0f - ((millis() - bootTime) / 1000.0f);
+            if (remaining < 0.0f)
+                remaining = 0.0f;
+
+            char buf[16];
+            dtostrf(remaining, 0, 1, buf);
+
+            u8g2.setFont(u8g2_font_5x8_tf);
+            u8g2.setCursor(
+                (u8g2.getDisplayWidth() - u8g2.getStrWidth("WAITING FOR NEC")) / 2,
+                10);
+            u8g2.println("WAITING FOR NEC");
+            u8g2.setCursor(
+                (u8g2.getDisplayWidth() - u8g2.getStrWidth(buf)) / 2,
+                24);
+            u8g2.print(buf);
+        }
+        else if (status == COUNTDOWN)
         {
             char buf[16];
 
             float value = (START_DELAY - (millis() - startTime)) / 1000.0;
 
-            if (started)
-                delayed_start = false;
-            else
-                dtostrf(value, 0, 1, buf);
+            dtostrf(value, 0, 1, buf);
 
             u8g2.setFont(u8g2_font_spleen8x16_me);
             u8g2.setCursor(
@@ -635,7 +683,19 @@ void loop()
                 16);
             u8g2.print(buf);
         }
-        else if (anti_retard && !started)
+        else if (digital_start_mode && status == STOPPED)
+        {
+            u8g2.setFont(u8g2_font_5x8_tf);
+            u8g2.setCursor(
+                (u8g2.getDisplayWidth() - u8g2.getStrWidth("DIGITAL START")) / 2,
+                10);
+            u8g2.println("DIGITAL START");
+            u8g2.setCursor(
+                (u8g2.getDisplayWidth() - u8g2.getStrWidth("HIGH=start LOW=stop")) / 2,
+                24);
+            u8g2.println("HIGH=start LOW=stop");
+        }
+        else if (anti_retard && status != STARTED)
         {
             if (play_intro2)
             {
@@ -656,7 +716,7 @@ void loop()
                 play_intro2 = false;
             }
 
-            if (wait_for_start)
+            if (status == READY)
             {
                 u8g2.setFont(u8g2_font_spleen8x16_me);
                 const char *done1 = "WAITING TO";
@@ -684,7 +744,7 @@ void loop()
             {
             case 0:
                 u8g2.setCursor(0, 10);
-                u8g2.print(started ? "ON " : "OFF");
+                u8g2.print(status == STARTED ? "ON " : "OFF");
                 u8g2.print(" M");
                 u8g2.print(mode);
                 u8g2.print(" FD: ");

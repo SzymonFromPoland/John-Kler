@@ -1,6 +1,4 @@
-#ifndef CONFIG_H
-#define CONFIG_H
-
+#pragma once
 #include <Arduino.h>
 
 #define DEBUG_ENABLED true
@@ -60,12 +58,13 @@ const int servo_midpoint = 95;
 
 enum robot_status
 {
-    IDLE,
     READY,
     COUNTDOWN,
-    RUNNING,
-    STOPPED,
+    STARTED,
+    STOPPED
 };
+
+extern robot_status status;
 
 struct Menu
 {
@@ -77,8 +76,8 @@ extern Menu menus[];
 
 extern bool screen_flipped;
 
-extern bool slow_down;
 extern bool play_intro;
+extern bool play_intro2;
 
 extern float threshold;
 extern float slow_threshold;
@@ -93,6 +92,8 @@ extern float yawStepKp;
 extern float yawStepKd;
 extern float targetYaw;
 
+extern bool slow_down;
+
 extern float speedStep;
 extern float speed;
 extern float max_speed;
@@ -100,7 +101,6 @@ extern float ramp_up_step;
 extern float rot_speed;
 extern float slow_speed;
 
-extern bool started;
 extern bool doCalibrate;
 extern bool hold_led;
 extern bool move_servo;
@@ -113,14 +113,13 @@ extern int menu;
 extern int menu_count;
 extern bool selected;
 extern int selectedOpt;
+extern bool delay_start;
 
 extern bool anti_retard;
 extern float anti_retard_angle;
-extern bool play_intro2;
+extern bool nec_signal_seen;
 
 extern float flag_threshold;
 extern float arch_angle;
 extern float arch_speed;
 extern float arch_time;
-
-#endif

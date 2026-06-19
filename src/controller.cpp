@@ -117,6 +117,7 @@ void handleIR()
   {
   case RC5:
   {
+    nec_signal_seen = true;
     uint8_t address = (irResults.value >> 6) & 0x1F;
     uint8_t command = irResults.value & 0x3F;
     uint8_t toggle = (irResults.value >> 11) & 0x01;
@@ -143,22 +144,14 @@ void handleIR()
     {
       if (command == START)
       {
-        if (anti_retard)
-        {
-          if (wait_for_start)
-            delayed_start = true;
-        }
+        if (delay_start)
+          status = COUNTDOWN;
         else
-        {
-          if (delay_start)
-            delayed_start = true;
-          else
-            started = true;
-        }
+          status = STARTED;
       }
       else if (command == STOP)
       {
-        wait_for_start = delayed_start = started = false;
+        status = STOPPED;
       }
     }
     break;
@@ -166,6 +159,7 @@ void handleIR()
 
   case NEC:
   {
+    nec_signal_seen = true;
     bool repeat = irResults.repeat;
     static uint8_t lastAddress = 0xFF;
     static uint8_t lastCommand = 0xFF;
@@ -190,16 +184,16 @@ void handleIR()
         if (strcmp(m.name, "E") == 0)
         {
           if (delay_start)
-            delayed_start = true;
+            status = COUNTDOWN;
           else
-            started = true;
+            status = STARTED;
         }
         else if (strcmp(m.name, "D") == 0)
         {
-          wait_for_start = delayed_start = started = false;
+          status = STOPPED;
         }
 
-        if (!started)
+        if (status == STOPPED)
         {
           if (strcmp(m.name, "F") == 0 && !repeat)
           {
@@ -232,7 +226,7 @@ void handleIR()
             {
               targetYaw = anti_retard_angle; // change to 135 in the competitions with mandatory placement
               // delayed_start = true;
-              wait_for_start = true;
+              status = READY;
             }
             else if (selected)
             {
@@ -362,7 +356,7 @@ void handleIR()
             {
               targetYaw = -anti_retard_angle; // change to -135 in the competitions with mandatory placement
               // delayed_start = true;
-              wait_for_start = true;
+              status = READY;
             }
             else if (selected)
             {
