@@ -7,15 +7,27 @@
 #define DEBUG_BAUD_RATE 115200
 
 #if DEBUG_ENABLED
-    #define DEBUG_INIT() Serial.begin(DEBUG_BAUD_RATE)
-    #define DEBUG_PRINT(x) Serial.print(x)
-    #define DEBUG_PRINTLN(x) Serial.println(x)
-    #define DEBUG_PRINTF(fmt, ...) Serial.printf(fmt, ##__VA_ARGS__)
+#define DEBUG_INIT() Serial.begin(DEBUG_BAUD_RATE)
+#define DEBUG_PRINT(x) Serial.print(x)
+#define DEBUG_PRINTLN(x) Serial.println(x)
+#define DEBUG_PRINTF(fmt, ...) Serial.printf(fmt, ##__VA_ARGS__)
 #else
-    #define DEBUG_INIT() do {} while(0)
-    #define DEBUG_PRINT(x) do {} while(0)
-    #define DEBUG_PRINTLN(x) do {} while(0)
-    #define DEBUG_PRINTF(fmt, ...) do {} while(0)
+#define DEBUG_INIT() \
+    do               \
+    {                \
+    } while (0)
+#define DEBUG_PRINT(x) \
+    do                 \
+    {                  \
+    } while (0)
+#define DEBUG_PRINTLN(x) \
+    do                   \
+    {                    \
+    } while (0)
+#define DEBUG_PRINTF(fmt, ...) \
+    do                         \
+    {                          \
+    } while (0)
 #endif
 
 #define M1A 16
@@ -45,6 +57,15 @@
 #define BAT 7
 
 const int servo_midpoint = 95;
+
+enum robot_status
+{
+    IDLE,
+    READY,
+    COUNTDOWN,
+    RUNNING,
+    STOPPED,
+};
 
 struct Menu
 {
@@ -96,9 +117,6 @@ extern int selectedOpt;
 extern bool anti_retard;
 extern float anti_retard_angle;
 extern bool play_intro2;
-extern bool delayed_start;
-extern bool delay_start;
-extern bool wait_for_start;
 
 extern float flag_threshold;
 extern float arch_angle;
