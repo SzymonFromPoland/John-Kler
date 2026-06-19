@@ -150,7 +150,10 @@ void handleIR()
         }
         else
         {
-          started = true;
+          if (delay_start)
+            delayed_start = true;
+          else
+            started = true;
         }
       }
       else if (command == STOP)
@@ -193,7 +196,7 @@ void handleIR()
         }
         else if (strcmp(m.name, "D") == 0)
         {
-          delayed_start = started = false;
+          wait_for_start = delayed_start = started = false;
         }
 
         if (!started)
