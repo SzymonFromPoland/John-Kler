@@ -336,8 +336,8 @@ void loop()
 
     if (!digital_start_mode && !nec_signal_seen && (now - bootTime >= 5000UL))
     {
-        digital_start_mode = true;
-        pinMode(RCV, INPUT_PULLUP);
+        digital_start_mode = true;  
+        pinMode(RCV, INPUT);
         status = STOPPED;
     }
 
